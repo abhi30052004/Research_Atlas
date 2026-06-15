@@ -36,8 +36,13 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50
     ALLOWED_EXTENSIONS: List[str] = ["pdf", "docx", "txt", "csv", "xlsx", "pptx"]
 
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "https://localhost:3000"]
-    FRONTEND_URL: str = "http://localhost:3000"
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "https://localhost:3000",
+        "http://localhost:5173",
+        "https://atlas-swart-kappa-13.vercel.app",
+    ]
+    FRONTEND_URL: str = "https://atlas-swart-kappa-13.vercel.app"
 
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200

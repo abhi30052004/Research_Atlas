@@ -4,6 +4,7 @@ import TopNav from '../../components/navigation/TopNav'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
 import { fetchSources, uploadSource, addUrlSource, deleteSource, generateArtifact, fetchArtifacts, deleteArtifact, fetchChats, fetchChat, createChat, type Source, type Artifact } from '../../api/workspace'
+import { API_BASE_URL } from '../../api/config'
 
 import {
   Upload,
@@ -109,7 +110,7 @@ export default function WorkspacePage() {
   const [sources, setSources] = useState<Source[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [currentChatId, setCurrentChatId] = useState<string | null>(null)
-  
+
   // Loading states
   const [, setIsLoading] = useState(true)
   const [input, setInput] = useState('')
@@ -169,7 +170,7 @@ export default function WorkspacePage() {
             content: contentStr
           }
         }))
-        
+
         if (fetchedChats && fetchedChats.length > 0) {
           setCurrentChatId(fetchedChats[0].id)
           // Also fetch the full chat messages
@@ -229,8 +230,7 @@ export default function WorkspacePage() {
     }
 
     try {
-      const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1'
-      const response = await fetch(`${apiUrl}/chat/${currentChatId}/messages/stream`, {
+      const response = await fetch(`${API_BASE_URL}/chat/${currentChatId}/messages/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -256,7 +256,7 @@ export default function WorkspacePage() {
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
           buffer = lines.pop() || ''
-          
+
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               const dataStr = line.slice(6).trim()
@@ -330,8 +330,7 @@ export default function WorkspacePage() {
     }
 
     try {
-      const apiUrl = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000/api/v1'
-      const response = await fetch(`${apiUrl}/chat/${currentChatId}/messages/regenerate`, {
+      const response = await fetch(`${API_BASE_URL}/chat/${currentChatId}/messages/regenerate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -341,7 +340,7 @@ export default function WorkspacePage() {
       })
 
       if (!response.ok) throw new Error('Failed to regenerate')
-      
+
       const data = await response.json()
       setMessages((prev) => [...prev, data.message])
       setIsTyping(false)
@@ -504,7 +503,7 @@ export default function WorkspacePage() {
     try {
       await deleteSource(id)
       addToast('Source deleted', 'info')
-    } catch(err) {
+    } catch (err) {
       addToast('Failed to delete source', 'error')
     }
   }
@@ -604,10 +603,9 @@ export default function WorkspacePage() {
 
   /* ---- Tab styling helper ---- */
   const tabCls = (tab: 'chat' | 'output' | 'editor') =>
-    `flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all cursor-pointer ${
-      activeTab === tab
-        ? 'border-secondary text-secondary'
-        : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline-variant'
+    `flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all cursor-pointer ${activeTab === tab
+      ? 'border-secondary text-secondary'
+      : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline-variant'
     }`
 
   return (
@@ -744,22 +742,20 @@ export default function WorkspacePage() {
                         <div className="flex gap-1.5">
                           <button
                             onClick={() => copyMessage(msg)}
-                            className={`px-3 py-1.5 border rounded-full text-xs transition-colors flex items-center gap-1 ${
-                              copiedId === msg.id
-                                ? 'border-green-400 bg-green-50 text-green-600'
-                                : 'border-outline-variant hover:bg-surface-container'
-                            }`}
+                            className={`px-3 py-1.5 border rounded-full text-xs transition-colors flex items-center gap-1 ${copiedId === msg.id
+                              ? 'border-green-400 bg-green-50 text-green-600'
+                              : 'border-outline-variant hover:bg-surface-container'
+                              }`}
                           >
                             {copiedId === msg.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                             {copiedId === msg.id ? 'Copied!' : 'Copy'}
                           </button>
                           <button
                             onClick={() => likeMessage(msg.id)}
-                            className={`px-2.5 py-1.5 border rounded-full text-xs transition-colors ${
-                              likedIds.includes(msg.id)
-                                ? 'border-primary bg-primary/10 text-primary'
-                                : 'border-outline-variant hover:bg-surface-container'
-                            }`}
+                            className={`px-2.5 py-1.5 border rounded-full text-xs transition-colors ${likedIds.includes(msg.id)
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-outline-variant hover:bg-surface-container'
+                              }`}
                           >
                             <ThumbsUp className={`w-3 h-3 ${likedIds.includes(msg.id) ? 'fill-primary' : ''}`} />
                           </button>
@@ -1160,11 +1156,10 @@ export default function WorkspacePage() {
                 <button
                   key={tool.label}
                   onClick={() => setSelectedTool(tool.label)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-colors text-xs font-medium group ${
-                    selectedTool === tool.label
-                      ? 'bg-secondary/10 text-secondary'
-                      : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
-                  }`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-colors text-xs font-medium group ${selectedTool === tool.label
+                    ? 'bg-secondary/10 text-secondary'
+                    : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
+                    }`}
                 >
                   <span className={`flex-shrink-0 ${selectedTool === tool.label ? 'text-secondary' : 'text-outline group-hover:text-secondary'}`}>
                     {tool.icon}

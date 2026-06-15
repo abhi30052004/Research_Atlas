@@ -23,7 +23,9 @@ services:
       - key: DEBUG
         value: "false"
       - key: CORS_ORIGINS
-        sync: false
+        value: '["http://localhost:5173","https://atlas-swart-kappa-13.vercel.app"]'
+      - key: FRONTEND_URL
+        value: https://atlas-swart-kappa-13.vercel.app
 
   - type: worker
     name: atlas-ai-worker
