@@ -407,10 +407,13 @@ class ArtifactService:
         )
 
         if not retrieved_docs:
-            context = "No specific sources provided."
+            context = "No source material available."
             system_content = (
-                "You are Atlas AI, an expert research assistant that creates high-quality, "
-                "structured documents. Since no sources were provided, use your general knowledge."
+                "You are Atlas AI, an expert research assistant. "
+                "No source documents were found in this workspace. "
+                "Respond with a clear, polite message stating that no sources are available to generate this artifact. "
+                "Suggest the user upload PDF, DOCX, or web URL sources first, then try generating again. "
+                "Do NOT generate content from your own knowledge."
             )
         else:
             context_parts = [
@@ -427,7 +430,7 @@ class ArtifactService:
             base_prompt = f"{base_prompt}\n\nAdditional instructions from user: {custom_prompt}"
 
         if not retrieved_docs:
-            base_prompt += "\n\nIMPORTANT: Ignore any instructions above that demand you use ONLY provided sources. Use your general knowledge to fulfill the request since no sources were provided."
+            base_prompt += "\n\nIMPORTANT: No source documents are available. Do NOT generate the requested artifact. Instead, return a short message explaining that sources must be uploaded before this artifact can be generated."
 
         full_prompt = f"{base_prompt}\n\n---\n\nSOURCE CHUNKS:\n{context}"
 

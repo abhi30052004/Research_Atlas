@@ -7,7 +7,7 @@ export default function SplashVideo() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowLogin(true);
-    }, 2400); // show words, then 1s gap before login
+    }, 1400); // reduced from 2400ms for snappier UX
 
     return () => clearTimeout(timer);
   }, []);
@@ -19,6 +19,7 @@ export default function SplashVideo() {
         muted
         playsInline
         loop
+        preload="auto"
         className="absolute inset-0 w-full h-full object-cover"
       >
         <source src="/login1.mp4" type="video/mp4" />

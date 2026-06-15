@@ -98,13 +98,52 @@ function getTool(value: string): StudioTool | undefined {
   return STUDIO_TOOLS.find(t => t.label === value || t.type === value)
 }
 
+function convertSourceCitations(html: string): string {
+  // Convert [Source N] and [Source: filename] to styled pills
+  return html
+    .replace(/\[Source\s+(\d+)(?::\s*([^\]]+))?\]/gi, (_match, num, name) => {
+      const label = name ? name.trim() : `Source ${num}`
+      return `<span class="source-cite">${label}</span>`
+    })
+    .replace(/\[Source:\s*([^\]]+)\]/gi, (_match, name) => {
+      return `<span class="source-cite">${name.trim()}</span>`
+    })
+}
+
 function renderMessageContent(content: string, isUser?: boolean) {
   if (isUser) {
     return <div className="whitespace-pre-wrap">{content}</div>
   }
   return (
-    <div className="markdown-body prose prose-sm max-w-none dark:prose-invert prose-p:leading-relaxed prose-pre:bg-surface-container-high prose-pre:text-on-surface [&>ol]:list-decimal [&>ol]:pl-5 [&>ul]:list-disc [&>ul]:pl-5 [&>p]:mb-2 [&>h1]:font-bold [&>h1]:text-lg [&>h2]:font-bold [&>h2]:text-md [&>h3]:font-bold">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+    <div className="prose-atlas max-w-none">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Style headings
+          h1: ({children}) => <h1>{children}</h1>,
+          h2: ({children}) => <h2>{children}</h2>,
+          h3: ({children}) => <h3>{children}</h3>,
+          // Style paragraphs — convert source citations inline
+          p: ({children, ...props}) => {
+            const text = String(children || '')
+            if (text.includes('[Source')) {
+              return <p {...props} dangerouslySetInnerHTML={{ __html: convertSourceCitations(text) }} />
+            }
+            return <p {...props}>{children}</p>
+          },
+          // Style tables
+          table: ({children}) => <table>{children}</table>,
+          // Style code blocks
+          code: ({children, className}) => {
+            const isBlock = className?.includes('language-')
+            return isBlock
+              ? <code className={className}>{children}</code>
+              : <code>{children}</code>
+          },
+          // Style blockquotes
+          blockquote: ({children}) => <blockquote>{children}</blockquote>,
+        }}
+      >
         {content}
       </ReactMarkdown>
     </div>
@@ -244,7 +283,18 @@ function normalizeArtifactContent(tool: string, content: unknown) {
 
   let contentStr = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)
   if (contentStr.match(/(^#|\*\*|\* |- |`)/m) && !contentStr.startsWith('<')) {
-    contentStr = DOMPurify.sanitize(marked.parse(contentStr) as string)
+    let html = DOMPurify.sanitize(marked.parse(contentStr) as string)
+    // Convert [Source: filename] to styled citation pills
+    html = html
+      .replace(/\[Source\s+(\d+)(?::\s*([^\]]+))?\]/gi, (_match: string, num: string, name: string) => {
+        const label = name ? name.trim() : `Source ${num}`
+        return `<span class="source-cite">${escapeHtml(label)}</span>`
+      })
+      .replace(/\[Source:\s*([^\]]+)\]/gi, (_match: string, name: string) => {
+        return `<span class="source-cite">${escapeHtml(name.trim())}</span>`
+      })
+    // Wrap in prose-atlas container
+    contentStr = `<div class="prose-atlas">${html}</div>`
   }
   return contentStr
 }
@@ -258,7 +308,7 @@ export default function WorkspacePage() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null)
 
   // Loading states
-  const [, setIsLoading] = useState(true)
+  const [isLoadingWorkspace, setIsLoading] = useState(true)
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [showUrlInput, setShowUrlInput] = useState(false)
@@ -857,8 +907,31 @@ export default function WorkspacePage() {
             )}
           </div>
 
+          {/* Loading Skeleton */}
+          {isLoadingWorkspace && (
+            <div className="flex-1 flex flex-col p-8 space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg skeleton" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-48 skeleton" />
+                  <div className="h-3 w-32 skeleton" />
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="h-16 w-full skeleton" />
+                <div className="h-16 w-5/6 skeleton" />
+                <div className="h-16 w-full skeleton" />
+                <div className="h-12 w-4/6 skeleton" />
+              </div>
+              <div className="flex items-center gap-3 mt-auto">
+                <div className="h-10 flex-1 skeleton" />
+                <div className="h-10 w-10 skeleton" />
+              </div>
+            </div>
+          )}
+
           {/* ═══════════════ TAB: Research Chat ═══════════════ */}
-          {activeTab === 'chat' && (
+          {!isLoadingWorkspace && activeTab === 'chat' && (
             <div className="flex-1 flex flex-col overflow-hidden">
               {/* Messages */}
               <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -962,7 +1035,7 @@ export default function WorkspacePage() {
           )}
 
           {/* ═══════════════ TAB: Studio Output ═══════════════ */}
-          {activeTab === 'output' && (
+          {!isLoadingWorkspace && activeTab === 'output' && (
             <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ background: 'linear-gradient(180deg, #fafbff 0%, #f5f6fa 100%)' }}>
               <div className="max-w-4xl mx-auto p-8">
                 {/* Header */}
@@ -1089,22 +1162,7 @@ export default function WorkspacePage() {
 
                               <div className="px-6 py-6">
                                 <div
-                                  className="prose prose-slate max-w-none text-sm leading-relaxed
-                                    [&_h1]:text-xl [&_h1]:font-bold [&_h1]:text-on-surface [&_h1]:mb-4 [&_h1]:mt-0 [&_h1]:pb-3 [&_h1]:border-b [&_h1]:border-outline-variant
-                                    [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-on-surface [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2
-                                    [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-on-surface [&_h3]:mb-2 [&_h3]:mt-5
-                                    [&_p]:text-on-surface-variant [&_p]:mb-3 [&_p]:leading-[1.75]
-                                    [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-4 [&_ul]:space-y-1.5 [&_ul]:text-on-surface-variant
-                                    [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-4 [&_ol]:space-y-1.5 [&_ol]:text-on-surface-variant
-                                    [&_li]:text-on-surface-variant [&_li]:leading-relaxed
-                                    [&_strong]:text-on-surface [&_strong]:font-semibold
-                                    [&_blockquote]:border-l-4 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-on-surface-variant [&_blockquote]:my-4
-                                    [&_table]:w-full [&_table]:border-collapse [&_table]:my-4
-                                    [&_th]:bg-surface-container [&_th]:px-4 [&_th]:py-2.5 [&_th]:text-left [&_th]:text-xs [&_th]:font-semibold [&_th]:text-on-surface [&_th]:border [&_th]:border-outline-variant
-                                    [&_td]:px-4 [&_td]:py-2.5 [&_td]:text-sm [&_td]:border [&_td]:border-outline-variant [&_td]:text-on-surface-variant
-                                    [&_tr:hover]:bg-surface-container-low
-                                    [&_code]:bg-surface-container [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono
-                                    [&_pre]:bg-surface-container [&_pre]:p-4 [&_pre]:rounded-xl [&_pre]:overflow-x-auto [&_pre]:my-4"
+                                  className="prose-atlas max-w-none"
                                   dangerouslySetInnerHTML={{ __html: artifact.content }}
                                 />
 
@@ -1142,7 +1200,7 @@ export default function WorkspacePage() {
           )}
 
           {/* ═══════════════ TAB: Editable ═══════════════ */}
-          {activeTab === 'editor' && (
+          {!isLoadingWorkspace && activeTab === 'editor' && (
             <div className="flex-1 flex flex-col overflow-hidden bg-white">
               {editingArtifact ? (
                 <>

@@ -27,7 +27,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true }
     try {
       await loginApi({ email, password })
       setStatus('success')
-      setTimeout(() => navigate('/dashboard'), 800)
+      setTimeout(() => navigate('/dashboard'), 400)
     } catch (err: any) {
       setStatus('idle')
       setError(err.response?.data?.detail || 'Invalid email or password.')

@@ -67,17 +67,22 @@ async def generate_answer(state: AgentState) -> AgentState:
         context = "No relevant sources found in the workspace."
         system_prompt = (
             "You are Atlas, an expert AI research assistant. "
-            "Since no relevant context was found in the user's workspace, answer the user's question using your general knowledge. "
-            "Be accurate and concise. Do not complain about missing sources, just answer the question."
+            "The user has not uploaded any sources to this workspace yet, or no relevant content was found. "
+            "Politely inform the user that you cannot answer because there are no uploaded sources to reference. "
+            "Suggest they upload PDF, DOCX, or web URL sources first, then ask their question again. "
+            "Do NOT answer the question using your own knowledge."
         )
     else:
         context = "\n\n---\n\n".join(context_parts)
         system_prompt = (
             "You are Atlas, an expert AI research assistant. "
-            "Answer the user's question using the provided context. "
+            "Answer the user's question using ONLY the provided source context below. "
             "Be accurate, concise, and cite sources by their [Source N] number. "
-            "If the context doesn't contain enough information, you may supplement with your general knowledge. "
-            "Do not make up information."
+            "You may explain concepts mentioned in the sources for better understanding and clarification, "
+            "but do NOT introduce any facts, figures, statistics, or claims that are not present in the provided sources. "
+            "If the sources do not contain enough information to answer the question, clearly state: "
+            "'The uploaded sources do not contain information about this topic.' "
+            "Do not make up or fabricate information."
         )
 
     messages = [
