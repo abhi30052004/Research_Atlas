@@ -1,0 +1,95 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: atlas_api
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8001
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+      - redis
+      - chromadb
+    volumes:
+      - uploads_data:/app/uploads
+    restart: unless-stopped
+
+  worker:
+    build: .
+    container_name: atlas_worker
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4 -Q sources
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8001
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+      - redis
+      - chromadb
+    volumes:
+      - uploads_data:/app/uploads
+    restart: unless-stopped
+
+  flower:
+    build: .
+    container_name: atlas_flower
+    command: celery -A app.workers.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - worker
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    container_name: atlas_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: atlas_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    container_name: atlas_chromadb
+    ports:
+      - "8001:8001"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8001
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:
+  chroma_data:
+  uploads_data:

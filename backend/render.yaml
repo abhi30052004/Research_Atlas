@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: atlas-ai-api
+    env: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: MONGODB_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CHROMA_HOST
+        sync: false
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: worker
+    name: atlas-ai-worker
+    env: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2 -Q sources
+    envVars:
+      - key: MONGODB_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: CHROMA_HOST
+        sync: false

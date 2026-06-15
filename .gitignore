@@ -1,0 +1,53 @@
+# Dependencies
+
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+
+# Environment
+
+*.env
+.env.local
+.env.production
+.env
+# Build
+
+dist/
+build/
+.next/
+coverage/
+
+# Uploads
+
+uploads/
+storage/
+
+# Logs
+
+logs/
+*.log
+npm-debug.log*
+
+# OS Files
+
+.DS_Store
+Thumbs.db
+
+# IDE
+
+.vscode/
+.idea/
+
+# Generated files
+
+*.pdf
+*.docx
+*.pptx
+
+# ChromaDB
+
+chromadb_data/
+
+# Mongo Dumps
+
+dump/

@@ -1,0 +1,71 @@
+# WEB FRAMEWORK
+fastapi
+uvicorn[standard]
+python-multipart
+
+# DATABASE
+motor
+pymongo
+
+# REDIS
+redis[hiredis]
+
+# AUTHENTICATION & SECURITY
+python-jose[cryptography]
+PyJWT
+passlib[bcrypt]
+bcrypt
+cryptography
+
+# CONFIGURATION
+pydantic
+pydantic-settings
+email-validator
+python-dotenv
+
+# AI / LLM
+openai
+groq
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langgraph
+langsmith
+tiktoken
+
+# VECTOR DATABASE
+chromadb
+onnxruntime
+
+# FILE PROCESSING
+PyMuPDF
+python-docx
+python-pptx
+pandas
+numpy
+openpyxl
+beautifulsoup4
+lxml
+aiofiles
+python-magic-bin
+
+# HTTP CLIENTS
+httpx
+requests
+
+# BACKGROUND TASKS
+celery
+flower
+
+# REPORTING / EXPORT
+reportlab
+
+# UTILITIES
+tenacity
+orjson
+
+# TESTING
+pytest
+pytest-asyncio
+pytest-cov

@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Data directories
+uploads/
+chroma_data/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.tsbuildinfo
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+celerybeat-schedule
+
+# OS
+.DS_Store
+Thumbs.db
