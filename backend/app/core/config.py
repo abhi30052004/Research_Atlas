@@ -41,7 +41,9 @@ class Settings(BaseSettings):
         "https://localhost:3000",
         "http://localhost:5173",
         "https://atlas-swart-kappa-13.vercel.app",
+        "https://atlas-dm2kl19dk-abhibhunia68-2333s-projects.vercel.app",
     ]
+    CORS_ORIGIN_REGEX: str = r"^https://atlas-[a-z0-9-]+-abhibhunia68-2333s-projects\.vercel\.app$"
     FRONTEND_URL: str = "https://atlas-swart-kappa-13.vercel.app"
 
     CHUNK_SIZE: int = 1000

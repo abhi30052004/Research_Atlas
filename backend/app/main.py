@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+import re
 import time
 
 from app.core.config import settings
@@ -32,11 +33,22 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+def is_allowed_cors_origin(origin: str) -> bool:
+    return bool(
+        origin in settings.CORS_ORIGINS
+        or (
+            settings.CORS_ORIGIN_REGEX
+            and re.fullmatch(settings.CORS_ORIGIN_REGEX, origin)
+        )
+    )
 
 
 @app.middleware("http")
@@ -76,7 +88,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Internal server error", "type": type(exc).__name__, "message": str(exc)},
     )
     # Add CORS headers so the browser can read the error
-    if origin in settings.CORS_ORIGINS:
+    if is_allowed_cors_origin(origin):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
     return response

@@ -23,7 +23,9 @@ services:
       - key: DEBUG
         value: "false"
       - key: CORS_ORIGINS
-        value: '["http://localhost:5173","https://atlas-swart-kappa-13.vercel.app"]'
+        value: '["http://localhost:5173","https://atlas-swart-kappa-13.vercel.app","https://atlas-dm2kl19dk-abhibhunia68-2333s-projects.vercel.app"]'
+      - key: CORS_ORIGIN_REGEX
+        value: '^https://atlas-[a-z0-9-]+-abhibhunia68-2333s-projects\.vercel\.app$'
       - key: FRONTEND_URL
         value: https://atlas-swart-kappa-13.vercel.app
 
