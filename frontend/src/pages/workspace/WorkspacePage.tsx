@@ -60,6 +60,8 @@ interface Message {
   citations?: number[]
 }
 
+type StudioTool = typeof STUDIO_TOOLS[number]
+
 function parseStreamData(line: string) {
   let dataStr = line.trim()
   while (dataStr.startsWith('data:')) {
@@ -92,6 +94,10 @@ function TypeBadge({ type }: { type: Source['type'] }) {
   return <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded ${colors[type]}`}>{type}</span>
 }
 
+function getTool(value: string): StudioTool | undefined {
+  return STUDIO_TOOLS.find(t => t.label === value || t.type === value)
+}
+
 function renderMessageContent(content: string, isUser?: boolean) {
   if (isUser) {
     return <div className="whitespace-pre-wrap">{content}</div>
@@ -107,8 +113,140 @@ function renderMessageContent(content: string, isUser?: boolean) {
 
 /* ---------- Tool icon lookup for artifact cards ---------- */
 function getToolIcon(label: string) {
-  const found = STUDIO_TOOLS.find(t => t.label === label)
+  const found = getTool(label)
   return found ? found.icon : <FileText className="w-4 h-4" />
+}
+
+function formatToolName(value: string) {
+  return getTool(value)?.label || value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function parseMaybeJson(content: unknown) {
+  if (typeof content !== 'string') return content
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return content
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return content
+  }
+}
+
+function renderSlideDeckHtml(slides: any[]) {
+  return `
+    <div class="space-y-4">
+      ${slides.map((slide, index) => `
+        <section class="rounded-xl border border-outline-variant bg-white overflow-hidden shadow-sm">
+          <div class="flex items-start gap-4 bg-violet-50 px-5 py-4 border-b border-violet-100">
+            <div class="w-11 h-11 rounded-lg bg-violet-600 text-white flex items-center justify-center font-bold text-sm">${escapeHtml(slide.slide_number || index + 1)}</div>
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] font-semibold uppercase text-violet-700">${escapeHtml(slide.slide_type || 'slide')}</p>
+              <h3 class="text-lg font-bold text-on-surface mt-1">${escapeHtml(slide.title || `Slide ${index + 1}`)}</h3>
+            </div>
+          </div>
+          <div class="grid gap-5 md:grid-cols-[1fr_1.1fr] p-5">
+            <div>
+              <p class="text-xs font-semibold text-on-surface mb-2">Slide Content</p>
+              <ul class="space-y-2">
+                ${(slide.bullets || []).map((bullet: string) => `<li class="flex gap-2 text-sm text-on-surface-variant"><span class="mt-2 w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0"></span><span>${escapeHtml(bullet)}</span></li>`).join('')}
+              </ul>
+            </div>
+            <div class="rounded-lg bg-surface-container-low p-4">
+              <p class="text-xs font-semibold text-on-surface mb-2">Speaker Notes</p>
+              <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(slide.speaker_notes || '')}</p>
+              ${slide.source_reference ? `<p class="mt-3 text-[11px] font-mono text-outline">Source: ${escapeHtml(slide.source_reference)}</p>` : ''}
+            </div>
+          </div>
+        </section>
+      `).join('')}
+    </div>
+  `
+}
+
+function renderFlashcardsHtml(cards: any[]) {
+  return `
+    <div class="grid gap-4 md:grid-cols-2">
+      ${cards.map((card, index) => `
+        <section class="rounded-xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <span class="text-[11px] font-bold uppercase text-amber-700">Card ${escapeHtml(card.id || index + 1)}</span>
+            <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-200">${escapeHtml(card.category || 'Study')}</span>
+          </div>
+          <div class="rounded-lg bg-white border border-amber-100 p-4 mb-3">
+            <p class="text-xs font-semibold text-outline mb-1">Front</p>
+            <h3 class="text-base font-bold text-on-surface">${escapeHtml(card.front || '')}</h3>
+          </div>
+          <div class="rounded-lg bg-white border border-amber-100 p-4">
+            <p class="text-xs font-semibold text-outline mb-1">Back</p>
+            <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(card.back || '')}</p>
+          </div>
+          ${card.source ? `<p class="mt-3 text-[11px] font-mono text-outline">Source: ${escapeHtml(card.source)}</p>` : ''}
+        </section>
+      `).join('')}
+    </div>
+  `
+}
+
+function renderQuizHtml(questions: any[]) {
+  return `
+    <div class="space-y-4">
+      ${questions.map((question, index) => {
+        const correct = question.correct_answer
+        const options = question.options || {}
+        return `
+          <section class="rounded-xl border border-outline-variant bg-white p-5 shadow-sm">
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">${escapeHtml(question.id || index + 1)}</span>
+              <span class="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">${escapeHtml(question.difficulty || 'medium')}</span>
+            </div>
+            <h3 class="text-base font-bold text-on-surface mb-4">${escapeHtml(question.question || '')}</h3>
+            <div class="grid gap-2 md:grid-cols-2">
+              ${Object.entries(options).map(([key, value]) => `
+                <div class="rounded-lg border px-3 py-2.5 text-sm ${key === correct ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-outline-variant bg-surface-container-low text-on-surface-variant'}">
+                  <span class="font-bold mr-2">${escapeHtml(key)}.</span>${escapeHtml(value)}
+                </div>
+              `).join('')}
+            </div>
+            <div class="mt-4 rounded-lg bg-surface-container-low p-4">
+              <p class="text-xs font-semibold text-on-surface mb-1">Answer: ${escapeHtml(correct)}</p>
+              <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(question.explanation || '')}</p>
+              ${question.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(question.source)}</p>` : ''}
+            </div>
+          </section>
+        `
+      }).join('')}
+    </div>
+  `
+}
+
+function normalizeArtifactContent(tool: string, content: unknown) {
+  const parsed = parseMaybeJson(content)
+  const toolType = getTool(tool)?.type || tool
+
+  if (Array.isArray(parsed) && toolType === 'slide_deck') {
+    return DOMPurify.sanitize(renderSlideDeckHtml(parsed))
+  }
+  if (Array.isArray(parsed) && toolType === 'flashcards') {
+    return DOMPurify.sanitize(renderFlashcardsHtml(parsed))
+  }
+  if (Array.isArray(parsed) && toolType === 'quiz') {
+    return DOMPurify.sanitize(renderQuizHtml(parsed))
+  }
+
+  let contentStr = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)
+  if (contentStr.match(/(^#|\*\*|\* |- |`)/m) && !contentStr.startsWith('<')) {
+    contentStr = DOMPurify.sanitize(marked.parse(contentStr) as string)
+  }
+  return contentStr
 }
 
 export default function WorkspacePage() {
@@ -164,18 +302,15 @@ export default function WorkspacePage() {
           workspace_id: workspaceId
         })))
         setArtifacts((fetchedArtifacts || []).map((a: any) => {
-          let contentStr = typeof a.content === 'string' ? a.content : JSON.stringify(a.content, null, 2)
-          // If it looks like markdown (has headers, bold, lists, etc) and not purely HTML, parse it
-          if (contentStr.match(/(^#|\*\*|\* |- |`)/m) && !contentStr.startsWith('<')) {
-            contentStr = DOMPurify.sanitize(marked.parse(contentStr) as string)
-          }
+          const tool = a.artifact_type || a.tool
           return {
             ...a,
             id: a.id || a._id,
-            tool: a.artifact_type || a.tool,
+            tool,
+            title: a.title || formatToolName(tool),
             createdAt: new Date(a.created_at || a.createdAt || new Date()),
             sourceCount: a.source_ids?.length || a.sourceCount || 0,
-            content: contentStr
+            content: normalizeArtifactContent(tool, a.content)
           }
         }))
 
@@ -540,16 +675,13 @@ export default function WorkspacePage() {
         source_ids: sources.map(s => s.id)
       })
 
-      let contentStr = typeof rawArtifact.content === 'string' ? rawArtifact.content : JSON.stringify(rawArtifact.content, null, 2)
-      if (contentStr.match(/(^#|\*\*|\* |- |`)/m) && !contentStr.startsWith('<')) {
-        contentStr = DOMPurify.sanitize(marked.parse(contentStr) as string)
-      }
+      const tool = rawArtifact.artifact_type || rawArtifact.tool || artifact_type
 
       const newArtifact: Artifact = {
         id: rawArtifact.id || rawArtifact._id,
-        tool: rawArtifact.artifact_type || rawArtifact.tool || selectedTool,
-        title: rawArtifact.title || selectedTool,
-        content: contentStr,
+        tool,
+        title: rawArtifact.title || formatToolName(tool),
+        content: normalizeArtifactContent(tool, rawArtifact.content),
         createdAt: new Date(rawArtifact.created_at || rawArtifact.createdAt || new Date()),
         sourceCount: rawArtifact.source_ids?.length || sources.length
       }
@@ -869,7 +1001,7 @@ export default function WorkspacePage() {
                   <div className="space-y-4">
                     {artifacts.map((artifact, index) => {
                       const isExpanded = expandedArtifact === artifact.id
-                      const toolObj = STUDIO_TOOLS.find(t => t.label === artifact.tool)
+                      const toolObj = getTool(artifact.tool)
                       const categoryLabel = toolObj?.category || 'Knowledge'
                       const categoryColors: Record<string, string> = {
                         Knowledge: '#2563eb',

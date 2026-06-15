@@ -167,7 +167,7 @@ Return ONLY valid JSON — no markdown code fences, no explanation, no preamble:
 [
   {
     "slide_number": 1,
-    "slide_type": "title | content | section | data | quote | summary",
+    "slide_type": "title | agenda | section | content | data | quote | summary | q_and_a",
     "title": "<slide title>",
     "bullets": ["<point 1>", "<point 2>", "<point 3>"],
     "speaker_notes": "<2-4 sentences the presenter should say for this slide>",
@@ -184,8 +184,12 @@ Follow this slide sequence exactly:
 - Slide 12: Q&A / Thank You
 
 Rules:
+- Create a polished business presentation structure, not a document pasted into slides.
+- Every slide title must be specific and presentation-ready.
 - Maximum 5 bullets per slide; each bullet must be under 12 words.
+- Use parallel bullet phrasing and avoid full paragraphs in bullets.
 - Speaker notes must add context not visible in the bullets.
+- Include source_reference on every evidence-based slide.
 - Derive all content from the provided sources only.
 - Return ONLY the JSON array. No text before or after it.
 """,
@@ -231,6 +235,7 @@ Return ONLY valid JSON — no markdown code fences, no explanation, no preamble:
     "front": "<concise question or term — never a paragraph>",
     "back": "<clear, complete answer or definition in 1-3 sentences>",
     "category": "<topic area this card belongs to>",
+    "card_type": "definition | concept | process | fact",
     "source": "<filename>"
   }
 ]
@@ -238,8 +243,10 @@ Return ONLY valid JSON — no markdown code fences, no explanation, no preamble:
 Rules:
 - Generate exactly 18 flashcards.
 - Mix card types: definitions (30%), concept explanations (30%), process/how-it-works (20%), facts/stats (20%).
+- Group cards across 4-6 meaningful categories.
 - Front must be a question or incomplete statement — never a paragraph.
 - Back must be self-contained and fully answer the front.
+- Keep each back answer concise enough to fit on a study card.
 - Cover all major concepts from the sources; do not cluster around one topic.
 - Return ONLY the JSON array. No text before or after it.
 """,
@@ -268,9 +275,11 @@ Return ONLY valid JSON — no markdown code fences, no explanation, no preamble:
 Rules:
 - Generate exactly 10 questions.
 - Distribute difficulty: 3 easy, 5 medium, 2 hard.
+- Questions must progress from foundational recall to applied understanding.
 - All questions and correct answers must be grounded in the provided sources.
 - Distractors (wrong options) must be plausible but clearly incorrect based on source content.
 - Explanations must reference specific information from the sources.
+- Keep option text similar in length so the correct answer is not obvious by formatting.
 - Return ONLY the JSON array. No text before or after it.
 """,
 

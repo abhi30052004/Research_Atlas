@@ -11,6 +11,8 @@ from app.core.database import connect_db, disconnect_db
 from app.core.redis import connect_redis, disconnect_redis
 from app.api.v1 import auth, workspaces, sources, chat, notes, artifacts, search, analytics, exports, health, users
 
+ATLAS_VERCEL_ORIGIN_REGEX = r"^https://atlas(-[a-z0-9]+)*\.vercel\.app$"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,11 +46,29 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 def is_allowed_cors_origin(origin: str) -> bool:
     return bool(
         origin in settings.CORS_ORIGINS
+        or re.fullmatch(ATLAS_VERCEL_ORIGIN_REGEX, origin)
         or (
             settings.CORS_ORIGIN_REGEX
             and re.fullmatch(settings.CORS_ORIGIN_REGEX, origin)
         )
     )
+
+
+def add_cors_headers(response: JSONResponse, origin: str) -> JSONResponse:
+    if is_allowed_cors_origin(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
+@app.middleware("http")
+async def preflight_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return add_cors_headers(JSONResponse(status_code=200, content={}), request.headers.get("origin", ""))
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -88,10 +108,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Internal server error", "type": type(exc).__name__, "message": str(exc)},
     )
     # Add CORS headers so the browser can read the error
-    if is_allowed_cors_origin(origin):
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
+    return add_cors_headers(response, origin)
 
 
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
