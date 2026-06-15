@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 class ChatService:
+    def _stream_event(self, event_type: str, content: str = "", **extra) -> str:
+        return json.dumps({"type": event_type, "content": content, **extra})
+
     async def create_chat(self, workspace_id: str, user_id: str, model: str = "gpt-4o", title: Optional[str] = None) -> dict:
         db = get_db()
         ws = await db.workspaces.find_one({"_id": workspace_id, "user_id": user_id})
@@ -86,7 +89,11 @@ class ChatService:
             raise HTTPException(status_code=404, detail="Chat not found")
 
         if detect_prompt_injection(content):
-            yield f"data: {json.dumps({'type': 'error', 'content': 'Message blocked: potential prompt injection detected.', 'done': True})}\n\n"
+            yield self._stream_event(
+                "error",
+                "Message blocked: potential prompt injection detected.",
+                done=True,
+            )
             return
 
         user_msg_id = str(ObjectId())
@@ -105,7 +112,7 @@ class ChatService:
             {"$push": {"messages": user_msg}, "$set": {"updated_at": datetime.now(timezone.utc)}},
         )
 
-        yield f"data: {json.dumps({'type': 'start', 'content': '', 'done': False})}\n\n"
+        yield self._stream_event("start", done=False)
 
         effective_model = model or chat.get("model", settings.OPENAI_DEFAULT_MODEL)
         try:
@@ -123,7 +130,7 @@ class ChatService:
             chunk_size = 50
             for i in range(0, len(response_text), chunk_size):
                 chunk = response_text[i: i + chunk_size]
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk, 'done': False})}\n\n"
+                yield self._stream_event("token", chunk, done=False)
 
             assistant_msg_id = str(ObjectId())
             assistant_msg = {
@@ -150,10 +157,19 @@ class ChatService:
                 model_used=effective_model, tokens_used=tokens_used,
             )
 
-            yield f"data: {json.dumps({'type': 'done', 'content': '', 'citations': citations, 'followups': followups, 'done': True})}\n\n"
+            yield self._stream_event(
+                "done",
+                citations=citations,
+                followups=followups,
+                done=True,
+            )
         except Exception as e:
             logger.error(f"Chat stream error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'content': 'An error occurred. Please try again.', 'done': True})}\n\n"
+            yield self._stream_event(
+                "error",
+                "An error occurred. Please try again.",
+                done=True,
+            )
 
     async def regenerate_message(
         self, chat_id: str, user_id: str, message_id: str, model: Optional[str] = None

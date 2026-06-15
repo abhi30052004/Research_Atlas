@@ -60,6 +60,14 @@ interface Message {
   citations?: number[]
 }
 
+function parseStreamData(line: string) {
+  let dataStr = line.trim()
+  while (dataStr.startsWith('data:')) {
+    dataStr = dataStr.slice(5).trim()
+  }
+  return dataStr ? JSON.parse(dataStr) : null
+}
+
 const STUDIO_TOOLS = [
   { category: "Knowledge", icon: <FileText className="w-4 h-4" />, label: "Summary", type: "summary" },
   { category: "Knowledge", icon: <Newspaper className="w-4 h-4" />, label: "Research Report", type: "research_report" },
@@ -259,17 +267,16 @@ export default function WorkspacePage() {
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
-              const dataStr = line.slice(6).trim()
-              if (dataStr) {
-                try {
-                  const parsed = JSON.parse(dataStr)
-                  if (parsed.type === 'token' && parsed.content) {
-                    aiContent += parsed.content
-                    setMessages((m) => m.map(msg => msg.id === aiMsgId ? { ...msg, content: aiContent } : msg))
-                  }
-                } catch (e) {
-                  console.error('JSON parse error during stream:', e)
+              try {
+                const parsed = parseStreamData(line)
+                if (parsed?.type === 'token' && parsed.content) {
+                  aiContent += parsed.content
+                  setMessages((m) => m.map(msg => msg.id === aiMsgId ? { ...msg, content: aiContent } : msg))
+                } else if (parsed?.type === 'error') {
+                  addToast(parsed.content || 'Failed to send message', 'error')
                 }
+              } catch (e) {
+                console.error('JSON parse error during stream:', e, line)
               }
             }
           }
