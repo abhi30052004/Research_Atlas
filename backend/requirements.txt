@@ -48,7 +48,7 @@ openpyxl
 beautifulsoup4
 lxml
 aiofiles
-python-magic-bin
+python-magic
 
 # HTTP CLIENTS
 httpx
@@ -69,4 +69,3 @@ orjson
 pytest
 pytest-asyncio
 pytest-cov
-python-magic
