@@ -69,3 +69,4 @@ orjson
 pytest
 pytest-asyncio
 pytest-cov
+python-magic
