@@ -1,6 +1,13 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from typing import List
 import secrets
+from urllib.parse import urlsplit, urlunsplit
+
+
+def _redis_url_with_db(redis_url: str, db: int) -> str:
+    parts = urlsplit(redis_url)
+    return urlunsplit((parts.scheme, parts.netloc, f"/{db}", parts.query, parts.fragment))
 
 
 class Settings(BaseSettings):
@@ -28,9 +35,9 @@ class Settings(BaseSettings):
     CHROMA_PORT: int = 8001
     CHROMA_PERSIST_DIR: str = "./chroma_data"
 
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
-    CELERY_TASK_ALWAYS_EAGER: bool = True
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
+    CELERY_TASK_ALWAYS_EAGER: bool = False
 
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
@@ -49,6 +56,10 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
     RETRIEVAL_TOP_K: int = 5
+    RETRIEVAL_MIN_RELEVANCE: float = 0.25
+    ARTIFACT_RETRIEVAL_TOP_K: int = 18
+    EMBEDDING_BATCH_SIZE: int = 64
+    CHROMA_ADD_BATCH_SIZE: int = 128
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
@@ -59,6 +70,14 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    @model_validator(mode="after")
+    def set_derived_urls(self):
+        if not self.CELERY_BROKER_URL:
+            self.CELERY_BROKER_URL = _redis_url_with_db(self.REDIS_URL, 0)
+        if not self.CELERY_RESULT_BACKEND:
+            self.CELERY_RESULT_BACKEND = _redis_url_with_db(self.REDIS_URL, 1)
+        return self
 
 
 settings = Settings()

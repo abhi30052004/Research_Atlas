@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import TopNav from '../../components/navigation/TopNav'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
 import { fetchSources, uploadSource, addUrlSource, deleteSource, generateArtifact, fetchArtifacts, deleteArtifact, fetchChats, fetchChat, createChat, type Source, type Artifact } from '../../api/workspace'
 import { API_BASE_URL } from '../../api/config'
 
@@ -342,6 +343,7 @@ function normalizeArtifactContent(tool: string, content: unknown) {
 
 export default function WorkspacePage() {
   const { id: workspaceId } = useParams<{ id: string }>()
+  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace)
   const [activeTab, setActiveTab] = useState<'chat' | 'output' | 'editor'>('chat')
 
   const [sources, setSources] = useState<Source[]>([])
@@ -377,6 +379,7 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     if (!workspaceId) return
+    setActiveWorkspace(workspaceId)
     const loadData = async () => {
       setIsLoading(true)
       try {
@@ -429,7 +432,7 @@ export default function WorkspacePage() {
       }
     }
     loadData()
-  }, [workspaceId])
+  }, [workspaceId, setActiveWorkspace])
 
   /* ---- UI Store ---- */
   const { addToast, addNotification, recordAICall, aiCalls, aiDailyLimit } = useUIStore()
@@ -610,7 +613,14 @@ export default function WorkspacePage() {
       if (!response.ok) throw new Error('Failed to regenerate')
 
       const data = await response.json()
-      setMessages((prev) => [...prev, data.message])
+      const regenerated = data.message || data
+      setMessages((prev) => [
+        ...prev,
+        {
+          ...regenerated,
+          role: regenerated.role === 'assistant' ? 'ai' : regenerated.role,
+        },
+      ])
       setIsTyping(false)
     } catch (err) {
       setIsTyping(false)

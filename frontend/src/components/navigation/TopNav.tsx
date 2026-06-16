@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { useUIStore, type Notification as NotifType, type ThemeOption } from '../../store/uiStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
 
 interface TopNavProps {
   activeTab?: 'studio' | 'dashboard'
@@ -67,6 +68,7 @@ function NotifIcon({ type }: { type: NotifType['icon'] }) {
 export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
+  const { workspaces, activeWorkspaceId } = useWorkspaceStore()
   const {
     notifications,
     markAllNotificationsRead,
@@ -118,6 +120,8 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
   const initials = user?.name?.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) ?? 'U'
   const displayName = user?.name || 'User'
   const displayEmail = user?.email || 'user@atlas.com'
+  const studioWorkspaceId = activeWorkspaceId || workspaces[0]?.id
+  const studioHref = studioWorkspaceId ? `/workspace/${studioWorkspaceId}` : '/dashboard'
 
   // Today's AI usage
   const today = new Date()
@@ -209,7 +213,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
               <span className="font-bold text-on-surface tracking-tight">Atlas</span>
             </Link>
             <nav className="hidden md:flex items-center gap-1">
-              <Link to="/workspace/1" className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${activeTab === 'studio' ? 'text-primary border-b-2 border-primary rounded-none pb-[13px]' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'}`}>
+              <Link to={studioHref} className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${activeTab === 'studio' ? 'text-primary border-b-2 border-primary rounded-none pb-[13px]' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'}`}>
                 Studio
               </Link>
               <Link to="/dashboard" className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${activeTab === 'dashboard' ? 'text-primary border-b-2 border-primary rounded-none pb-[13px]' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'}`}>

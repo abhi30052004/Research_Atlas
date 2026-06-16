@@ -59,7 +59,7 @@ function CreateWorkspaceModal({ onClose, onCreate }: { onClose: () => void; onCr
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { workspaces, addWorkspace, deleteWorkspace, fetchWorkspaces } = useWorkspaceStore()
+  const { workspaces, addWorkspace, deleteWorkspace, fetchWorkspaces, setActiveWorkspace } = useWorkspaceStore()
   const [showModal, setShowModal] = useState(false)
 
   useEffect(() => {
@@ -127,7 +127,10 @@ export default function DashboardPage() {
             {workspaces.map((ws) => (
               <div
                 key={ws.id}
-                onClick={() => navigate(`/workspace/${ws.id}`)}
+                onClick={() => {
+                  setActiveWorkspace(ws.id)
+                  navigate(`/workspace/${ws.id}`)
+                }}
                 className="tonal-card p-5 rounded-xl group cursor-pointer relative overflow-hidden"
               >
                 <button

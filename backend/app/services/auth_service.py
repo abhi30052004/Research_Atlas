@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from bson import ObjectId
 import jwt
@@ -65,9 +65,7 @@ class AuthService:
             "_id": str(ObjectId()),
             "token": refresh_token,
             "user_id": user_id,
-            "expires_at": datetime.now(timezone.utc).replace(
-                day=datetime.now().day + settings.REFRESH_TOKEN_EXPIRE_DAYS
-            ),
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         })
 
         return TokenResponse(
@@ -101,6 +99,7 @@ class AuthService:
             "_id": str(ObjectId()),
             "token": new_refresh,
             "user_id": user_id,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         })
 
         return TokenResponse(

@@ -6,20 +6,24 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-async def extract_text_from_pdf(file_path: str) -> tuple[str, int]:
+async def extract_pages_from_pdf(file_path: str) -> tuple[list[str], int]:
     try:
         import fitz
         doc = fitz.open(file_path)
-        text_parts = []
+        pages = []
         for page in doc:
-            text_parts.append(page.get_text())
+            pages.append(page.get_text())
         page_count = len(doc)
         doc.close()
-        full_text = "\n".join(text_parts)
-        return full_text, page_count
+        return pages, page_count
     except Exception as e:
         logger.error(f"PDF extraction error: {e}")
         raise
+
+
+async def extract_text_from_pdf(file_path: str) -> tuple[str, int]:
+    pages, page_count = await extract_pages_from_pdf(file_path)
+    return "\n".join(pages), page_count
 
 
 async def extract_text_from_docx(file_path: str) -> str:

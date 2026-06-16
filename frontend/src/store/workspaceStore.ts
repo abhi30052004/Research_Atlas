@@ -33,14 +33,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
     set({ isLoading: true, error: null })
     try {
       const { data } = await api.get('/workspaces')
+      const workspaceList = Array.isArray(data) ? data : data.workspaces || []
       // Map backend fields to frontend interface if necessary
-      const mappedWorkspaces = data.map((ws: any) => ({
+      const mappedWorkspaces = workspaceList.map((ws: any) => ({
         id: ws.id,
         title: ws.name,
         description: ws.description,
         tag: ws.category || 'General',
         tagColor: 'text-secondary bg-secondary-fixed/30', // Fallback color
-        files: ws.file_count || 0,
+        files: ws.source_count ?? ws.file_count ?? 0,
         members: ws.member_count || 1,
         updatedAt: ws.updated_at || new Date().toISOString()
       }))

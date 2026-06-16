@@ -24,6 +24,9 @@ def chunk_text(
     chunks = splitter.split_text(text)
     result = []
     for i, chunk in enumerate(chunks):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
         result.append(
             {
                 "chunk_id": f"{source_id}_chunk_{i}",
@@ -58,6 +61,9 @@ def chunk_text_with_pages(
             continue
         chunks = splitter.split_text(page_text)
         for chunk in chunks:
+            chunk = chunk.strip()
+            if not chunk:
+                continue
             result.append(
                 {
                     "chunk_id": f"{source_id}_chunk_{chunk_idx}",
@@ -71,4 +77,6 @@ def chunk_text_with_pages(
                 }
             )
             chunk_idx += 1
+    for chunk in result:
+        chunk["metadata"]["chunk_total"] = len(result)
     return result

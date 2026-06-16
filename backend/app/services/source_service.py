@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from bson import ObjectId
@@ -8,8 +10,22 @@ from app.models.source import ProcessingStatus, SourceType
 from app.utils.file_utils import save_upload_file, delete_file
 from app.workers.source_tasks import process_source_task
 
+logger = logging.getLogger(__name__)
+
 
 class SourceService:
+    def _enqueue_processing(self, source_id: str) -> None:
+        try:
+            process_source_task.delay(source_id)
+        except Exception as exc:
+            logger.warning(
+                "Celery enqueue failed for source %s; processing in API background task: %s",
+                source_id,
+                exc,
+            )
+            from app.workers.source_tasks import _process_source
+            asyncio.create_task(_process_source(source_id))
+
     async def upload_file(self, file: UploadFile, workspace_id: str, user_id: str) -> dict:
         db = get_db()
         ws = await db.workspaces.find_one({"_id": workspace_id, "user_id": user_id})
@@ -47,7 +63,7 @@ class SourceService:
             {"_id": workspace_id},
             {"$inc": {"source_count": 1}, "$set": {"updated_at": datetime.now(timezone.utc)}},
         )
-        process_source_task.delay(source_id)
+        self._enqueue_processing(source_id)
         doc["id"] = source_id
         return doc
 
@@ -79,7 +95,7 @@ class SourceService:
             {"_id": workspace_id},
             {"$inc": {"source_count": 1}, "$set": {"updated_at": datetime.now(timezone.utc)}},
         )
-        process_source_task.delay(source_id)
+        self._enqueue_processing(source_id)
         doc["id"] = source_id
         return doc
 

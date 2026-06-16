@@ -15,7 +15,7 @@ def process_source_task(self, source_id: str):
 async def _process_source(source_id: str):
     from app.core.database import connect_db, get_db
     from app.utils.extractors import (
-        extract_text_from_pdf,
+        extract_pages_from_pdf,
         extract_text_from_docx,
         extract_text_from_txt,
         extract_text_from_csv,
@@ -27,8 +27,11 @@ async def _process_source(source_id: str):
     from app.services.rag_service import rag_service
     from app.models.source import ProcessingStatus, SourceType
 
-    await connect_db()
-    db = get_db()
+    try:
+        db = get_db()
+    except RuntimeError:
+        await connect_db()
+        db = get_db()
 
     source = await db.sources.find_one({"_id": source_id})
     if not source:
@@ -47,7 +50,9 @@ async def _process_source(source_id: str):
         chunks = []
 
         if source_type == SourceType.PDF.value:
-            text, page_count = await extract_text_from_pdf(source["file_path"])
+            pages, page_count = await extract_pages_from_pdf(source["file_path"])
+            text = "\n".join(pages)
+            chunks = chunk_text_with_pages(pages, source_id, source["filename"])
         elif source_type == SourceType.DOCX.value:
             text = await extract_text_from_docx(source["file_path"])
         elif source_type == SourceType.TXT.value:
@@ -62,7 +67,8 @@ async def _process_source(source_id: str):
             text = await extract_text_from_url(source["url"])
 
         word_count = len(text.split()) if text else 0
-        chunks = chunk_text(text, source_id, source["filename"])
+        if not chunks:
+            chunks = chunk_text(text, source_id, source["filename"])
 
         chunk_count = await rag_service.index_chunks(source["workspace_id"], chunks)
 
