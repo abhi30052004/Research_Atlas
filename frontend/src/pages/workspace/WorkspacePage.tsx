@@ -88,6 +88,8 @@ const STUDIO_TOOLS = [
 ]
 
 const SUGGESTED = ['"Summarize ESG goals"', '"Identify key risks"', '"Compare with Q3"']
+const SOURCE_REFRESH_INTERVAL_MS = 2000
+const SOURCE_REFRESH_AFTER_UPLOAD_MS = 1500
 
 
 function TypeBadge({ type }: { type: Source['type'] }) {
@@ -472,7 +474,7 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     if (!workspaceId || !hasProcessingSources) return
-    const intervalId = window.setInterval(refreshSources, 3000)
+    const intervalId = window.setInterval(refreshSources, SOURCE_REFRESH_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [workspaceId, hasProcessingSources, refreshSources])
 
@@ -733,6 +735,7 @@ export default function WorkspacePage() {
       })
       addToast(`"${mappedSource.name}" uploaded. Processing source...`, 'info')
       refreshSources()
+      window.setTimeout(refreshSources, SOURCE_REFRESH_AFTER_UPLOAD_MS)
     } catch (error) {
       setSources((s) => s.filter((src) => src.id !== tempId))
       addToast(`Failed to upload "${file.name}"`, 'error')
@@ -775,6 +778,7 @@ export default function WorkspacePage() {
       })
       addToast('URL source added. Processing source...', 'info')
       refreshSources()
+      window.setTimeout(refreshSources, SOURCE_REFRESH_AFTER_UPLOAD_MS)
     } catch (error) {
       setSources((s) => s.filter((src) => src.id !== tempId))
       addToast('Failed to process URL', 'error')

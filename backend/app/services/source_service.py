@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 from bson import ObjectId
-from fastapi import HTTPException, UploadFile
+from fastapi import BackgroundTasks, HTTPException, UploadFile
 
 from app.core.database import get_db
 from app.models.source import ProcessingStatus, SourceType
@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class SourceService:
-    def _enqueue_processing(self, source_id: str) -> None:
+    async def _enqueue_processing(self, source_id: str) -> None:
         try:
-            process_source_task.delay(source_id)
+            await asyncio.to_thread(process_source_task.delay, source_id)
+            logger.info("Queued source %s for Celery processing", source_id)
         except Exception as exc:
             logger.warning(
                 "Celery enqueue failed for source %s; processing in API background task: %s",
@@ -24,9 +25,29 @@ class SourceService:
                 exc,
             )
             from app.workers.source_tasks import _process_source
-            asyncio.create_task(_process_source(source_id))
+            try:
+                await _process_source(source_id)
+            except Exception:
+                logger.exception("API fallback processing failed for source %s", source_id)
 
-    async def upload_file(self, file: UploadFile, workspace_id: str, user_id: str) -> dict:
+    def _schedule_processing(
+        self,
+        source_id: str,
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> None:
+        if background_tasks is not None:
+            background_tasks.add_task(self._enqueue_processing, source_id)
+            return
+
+        asyncio.create_task(self._enqueue_processing(source_id))
+
+    async def upload_file(
+        self,
+        file: UploadFile,
+        workspace_id: str,
+        user_id: str,
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> dict:
         db = get_db()
         ws = await db.workspaces.find_one({"_id": workspace_id, "user_id": user_id})
         if not ws:
@@ -63,11 +84,18 @@ class SourceService:
             {"_id": workspace_id},
             {"$inc": {"source_count": 1}, "$set": {"updated_at": datetime.now(timezone.utc)}},
         )
-        self._enqueue_processing(source_id)
+        self._schedule_processing(source_id, background_tasks)
         doc["id"] = source_id
         return doc
 
-    async def add_url(self, url: str, workspace_id: str, user_id: str, name: Optional[str] = None) -> dict:
+    async def add_url(
+        self,
+        url: str,
+        workspace_id: str,
+        user_id: str,
+        name: Optional[str] = None,
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> dict:
         db = get_db()
         ws = await db.workspaces.find_one({"_id": workspace_id, "user_id": user_id})
         if not ws:
@@ -95,7 +123,7 @@ class SourceService:
             {"_id": workspace_id},
             {"$inc": {"source_count": 1}, "$set": {"updated_at": datetime.now(timezone.utc)}},
         )
-        self._enqueue_processing(source_id)
+        self._schedule_processing(source_id, background_tasks)
         doc["id"] = source_id
         return doc
 

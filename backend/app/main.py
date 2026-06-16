@@ -43,6 +43,16 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
+@app.get("/")
+async def api_root():
+    return {
+        "status": "ok",
+        "service": "Atlas AI API",
+        "health": "/api/v1/health",
+        "docs": "/docs",
+    }
+
+
 def is_allowed_cors_origin(origin: str) -> bool:
     return bool(
         origin in settings.CORS_ORIGINS

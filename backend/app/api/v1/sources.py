@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, status, Query
 from typing import Optional
 
 from app.schemas.source import SourceURLCreate, SourceResponse, SourceListResponse
@@ -10,16 +10,32 @@ router = APIRouter()
 
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_source(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     workspace_id: str = Query(...),
     current_user: dict = Depends(get_current_user),
 ):
-    return await source_service.upload_file(file, workspace_id, str(current_user["_id"]))
+    return await source_service.upload_file(
+        file,
+        workspace_id,
+        str(current_user["_id"]),
+        background_tasks,
+    )
 
 
 @router.post("/url", status_code=status.HTTP_202_ACCEPTED)
-async def add_url_source(data: SourceURLCreate, current_user: dict = Depends(get_current_user)):
-    return await source_service.add_url(data.url, data.workspace_id, str(current_user["_id"]), data.name)
+async def add_url_source(
+    data: SourceURLCreate,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
+    return await source_service.add_url(
+        data.url,
+        data.workspace_id,
+        str(current_user["_id"]),
+        data.name,
+        background_tasks,
+    )
 
 
 @router.get("")
