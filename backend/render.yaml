@@ -28,14 +28,18 @@ services:
         value: '^https://atlas(-[a-z0-9]+)*\.vercel\.app$'
       - key: FRONTEND_URL
         value: https://atlas-swart-kappa-13.vercel.app
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_EMBEDDING_DIMENSIONS
+        value: "768"
       - key: CHUNK_SIZE
-        value: "1600"
+        value: "2200"
       - key: CHUNK_OVERLAP
-        value: "150"
+        value: "100"
       - key: EMBEDDING_BATCH_SIZE
-        value: "128"
+        value: "256"
       - key: EMBEDDING_CONCURRENCY
-        value: "3"
+        value: "4"
       - key: CHROMA_ADD_BATCH_SIZE
         value: "256"
       - key: STALE_PENDING_REQUEUE_SECONDS
@@ -63,14 +67,18 @@ services:
         sync: false
       - key: CHROMA_HOST
         sync: false
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_EMBEDDING_DIMENSIONS
+        value: "768"
       - key: CHUNK_SIZE
-        value: "1600"
+        value: "2200"
       - key: CHUNK_OVERLAP
-        value: "150"
+        value: "100"
       - key: EMBEDDING_BATCH_SIZE
-        value: "128"
+        value: "256"
       - key: EMBEDDING_CONCURRENCY
-        value: "3"
+        value: "4"
       - key: CHROMA_ADD_BATCH_SIZE
         value: "256"
       - key: STALE_PENDING_REQUEUE_SECONDS

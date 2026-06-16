@@ -26,6 +26,7 @@ async def _process_source(source_id: str):
     from app.utils.chunking import chunk_text, chunk_text_with_pages
     from app.services.rag_service import rag_service
     from app.models.source import ProcessingStatus, SourceType
+    from app.core.config import settings
 
     try:
         db = get_db()
@@ -80,6 +81,9 @@ async def _process_source(source_id: str):
                     "chunk_count": chunk_count,
                     "page_count": page_count,
                     "word_count": word_count,
+                    "metadata.embedding_model": settings.OPENAI_EMBEDDING_MODEL,
+                    "metadata.embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
+                    "metadata.chroma_collection": rag_service.collection_name(source["workspace_id"]),
                     "updated_at": datetime.now(timezone.utc),
                 }
             },

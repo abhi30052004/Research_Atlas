@@ -1,6 +1,6 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 import secrets
 from urllib.parse import urlsplit, urlunsplit
 
@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 100
 
     OPENAI_API_KEY: str = ""
-    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-large"
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    OPENAI_EMBEDDING_DIMENSIONS: Optional[int] = 768
     OPENAI_DEFAULT_MODEL: str = "gpt-4o"
 
     GROQ_API_KEY: str = ""
@@ -53,14 +54,17 @@ class Settings(BaseSettings):
     CORS_ORIGIN_REGEX: str = r"^https://atlas-[a-z0-9-]+-abhibhunia68-2333s-projects\.vercel\.app$"
     FRONTEND_URL: str = "https://atlas-swart-kappa-13.vercel.app"
 
-    CHUNK_SIZE: int = 1600
-    CHUNK_OVERLAP: int = 150
+    CHUNK_SIZE: int = 2200
+    CHUNK_OVERLAP: int = 100
     RETRIEVAL_TOP_K: int = 5
     RETRIEVAL_MIN_RELEVANCE: float = 0.25
     ARTIFACT_RETRIEVAL_TOP_K: int = 18
-    EMBEDDING_BATCH_SIZE: int = 128
-    EMBEDDING_CONCURRENCY: int = 3
+    EMBEDDING_BATCH_SIZE: int = 256
+    EMBEDDING_CONCURRENCY: int = 4
     CHROMA_ADD_BATCH_SIZE: int = 256
+    SEARCH_LEGACY_COLLECTIONS: bool = True
+    LEGACY_EMBEDDING_MODEL: str = "text-embedding-3-large"
+    LEGACY_EMBEDDING_DIMENSIONS: Optional[int] = None
     STALE_PENDING_REQUEUE_SECONDS: int = 120
     STALE_PROCESSING_REQUEUE_SECONDS: int = 900
 

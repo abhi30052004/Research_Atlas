@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import re
 from typing import List, Dict, Any, Optional
 import chromadb
 from openai import AsyncOpenAI
@@ -27,28 +28,69 @@ class RAGService:
             self._openai = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         return self._openai
 
-    def collection_name(self, workspace_id: str) -> str:
-        return f"workspace_{workspace_id}"
+    def _slug(self, value: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_-]+", "_", value).strip("_")
+
+    def collection_name(
+        self,
+        workspace_id: str,
+        model: Optional[str] = None,
+        dimensions: Optional[int] = None,
+    ) -> str:
+        model = model or settings.OPENAI_EMBEDDING_MODEL
+        if dimensions is None and model == settings.OPENAI_EMBEDDING_MODEL:
+            dimensions = settings.OPENAI_EMBEDDING_DIMENSIONS
+        dim_label = str(dimensions) if dimensions else "full"
+        return f"workspace_{workspace_id}_{self._slug(model)}_{dim_label}"
+
+    def legacy_collection_names(self, workspace_id: str) -> List[str]:
+        names = [f"workspace_{workspace_id}"]
+        legacy_model_name = self.collection_name(
+            workspace_id,
+            settings.LEGACY_EMBEDDING_MODEL,
+            settings.LEGACY_EMBEDDING_DIMENSIONS,
+        )
+        if legacy_model_name not in names:
+            names.append(legacy_model_name)
+        return names
 
     def _batched(self, items: List[Any], batch_size: int):
         batch_size = max(1, batch_size)
         for index in range(0, len(items), batch_size):
             yield items[index: index + batch_size]
 
-    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    def _embedding_dimensions_for_model(
+        self,
+        model: str,
+        dimensions: Optional[int],
+    ) -> Optional[int]:
+        if dimensions and model.startswith("text-embedding-3"):
+            return dimensions
+        return None
+
+    async def embed_texts(
+        self,
+        texts: List[str],
+        model: Optional[str] = None,
+        dimensions: Optional[int] = None,
+    ) -> List[List[float]]:
         if not texts:
             return []
+        model = model or settings.OPENAI_EMBEDDING_MODEL
+        if dimensions is None and model == settings.OPENAI_EMBEDDING_MODEL:
+            dimensions = settings.OPENAI_EMBEDDING_DIMENSIONS
+        embedding_dimensions = self._embedding_dimensions_for_model(model, dimensions)
         client = self._get_openai()
         batches = list(enumerate(self._batched(texts, settings.EMBEDDING_BATCH_SIZE)))
         concurrency = max(1, settings.EMBEDDING_CONCURRENCY)
         semaphore = asyncio.Semaphore(concurrency)
 
         async def embed_batch(batch_index: int, batch: List[str]):
+            payload = {"model": model, "input": batch}
+            if embedding_dimensions:
+                payload["dimensions"] = embedding_dimensions
             async with semaphore:
-                response = await client.embeddings.create(
-                    model=settings.OPENAI_EMBEDDING_MODEL,
-                    input=batch,
-                )
+                response = await client.embeddings.create(**payload)
             data = list(response.data)
             if all(isinstance(getattr(item, "index", None), int) for item in data):
                 data.sort(key=lambda item: item.index)
@@ -69,13 +111,24 @@ class RAGService:
         chroma = await self._get_chroma()
         collection = await chroma.get_or_create_collection(
             name=self.collection_name(workspace_id),
-            metadata={"hnsw:space": "cosine"},
+            metadata={
+                "hnsw:space": "cosine",
+                "embedding_model": settings.OPENAI_EMBEDDING_MODEL,
+                "embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
+            },
         )
         for batch in self._batched(chunks, settings.CHROMA_ADD_BATCH_SIZE):
             texts = [c["content"] for c in batch]
             embeddings = await self.embed_texts(texts)
             ids = [c["chunk_id"] for c in batch]
-            metadatas = [c["metadata"] for c in batch]
+            metadatas = [
+                {
+                    **c["metadata"],
+                    "embedding_model": settings.OPENAI_EMBEDDING_MODEL,
+                    "embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
+                }
+                for c in batch
+            ]
             await collection.upsert(
                 ids=ids,
                 embeddings=embeddings,
@@ -85,18 +138,19 @@ class RAGService:
         logger.info(f"Indexed {len(chunks)} chunks in workspace {workspace_id}")
         return len(chunks)
 
-    async def retrieve(
+    async def _retrieve_from_collection(
         self,
-        workspace_id: str,
+        collection_name: str,
         query: str,
-        top_k: int = None,
-        source_ids: Optional[List[str]] = None,
+        top_k: int,
+        source_ids: Optional[List[str]],
+        model: str,
+        dimensions: Optional[int],
     ) -> List[Dict[str, Any]]:
-        top_k = top_k or settings.RETRIEVAL_TOP_K
         try:
             chroma = await self._get_chroma()
-            collection = await chroma.get_collection(self.collection_name(workspace_id))
-            query_embedding = await self.embed_texts([query])
+            collection = await chroma.get_collection(collection_name)
+            query_embedding = await self.embed_texts([query], model=model, dimensions=dimensions)
             where = {"source_id": {"$in": source_ids}} if source_ids else None
             results = await collection.query(
                 query_embeddings=query_embedding,
@@ -106,7 +160,7 @@ class RAGService:
             )
             docs = []
             ids = results.get("ids", [[]])[0]
-            for i, doc in enumerate(results["documents"][0]):
+            for i, doc in enumerate(results.get("documents", [[]])[0]):
                 metadata = results["metadatas"][0][i]
                 distance = results["distances"][0][i]
                 relevance_score = 1 - distance
@@ -121,25 +175,67 @@ class RAGService:
                     "page_number": metadata.get("page_number"),
                     "chunk_id": metadata.get("chunk_id", ids[i] if i < len(ids) else ""),
                 })
-            return sorted(docs, key=lambda x: x["relevance_score"], reverse=True)
+            return docs
+        except Exception as e:
+            logger.debug(f"Retrieval skipped for collection {collection_name}: {e}")
+            return []
+
+    async def retrieve(
+        self,
+        workspace_id: str,
+        query: str,
+        top_k: int = None,
+        source_ids: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        top_k = top_k or settings.RETRIEVAL_TOP_K
+        try:
+            docs = await self._retrieve_from_collection(
+                self.collection_name(workspace_id),
+                query,
+                top_k,
+                source_ids,
+                settings.OPENAI_EMBEDDING_MODEL,
+                settings.OPENAI_EMBEDDING_DIMENSIONS,
+            )
+            if settings.SEARCH_LEGACY_COLLECTIONS:
+                for collection_name in self.legacy_collection_names(workspace_id):
+                    docs.extend(await self._retrieve_from_collection(
+                        collection_name,
+                        query,
+                        top_k,
+                        source_ids,
+                        settings.LEGACY_EMBEDDING_MODEL,
+                        settings.LEGACY_EMBEDDING_DIMENSIONS,
+                    ))
+
+            deduped = {}
+            for doc in docs:
+                key = doc.get("chunk_id") or f"{doc.get('source_id')}:{doc.get('content')[:80]}"
+                if key not in deduped or doc["relevance_score"] > deduped[key]["relevance_score"]:
+                    deduped[key] = doc
+            return sorted(deduped.values(), key=lambda x: x["relevance_score"], reverse=True)[:top_k]
         except Exception as e:
             logger.warning(f"Retrieval error for workspace {workspace_id}: {e}")
             return []
 
     async def delete_source_chunks(self, workspace_id: str, source_id: str) -> None:
-        try:
-            chroma = await self._get_chroma()
-            collection = await chroma.get_collection(self.collection_name(workspace_id))
-            await collection.delete(where={"source_id": source_id})
-        except Exception as e:
-            logger.warning(f"Failed to delete chunks for source {source_id}: {e}")
+        chroma = await self._get_chroma()
+        collection_names = [self.collection_name(workspace_id), *self.legacy_collection_names(workspace_id)]
+        for collection_name in dict.fromkeys(collection_names):
+            try:
+                collection = await chroma.get_collection(collection_name)
+                await collection.delete(where={"source_id": source_id})
+            except Exception as e:
+                logger.debug(f"Failed to delete chunks for source {source_id} in {collection_name}: {e}")
 
     async def delete_workspace_collection(self, workspace_id: str) -> None:
-        try:
-            chroma = await self._get_chroma()
-            await chroma.delete_collection(self.collection_name(workspace_id))
-        except Exception as e:
-            logger.warning(f"Failed to delete collection for workspace {workspace_id}: {e}")
+        chroma = await self._get_chroma()
+        collection_names = [self.collection_name(workspace_id), *self.legacy_collection_names(workspace_id)]
+        for collection_name in dict.fromkeys(collection_names):
+            try:
+                await chroma.delete_collection(collection_name)
+            except Exception as e:
+                logger.debug(f"Failed to delete collection {collection_name}: {e}")
 
     async def generate_citations(self, retrieved_docs: List[Dict[str, Any]], db) -> List[dict]:
         citations = []

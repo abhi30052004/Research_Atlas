@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 from typing import Optional
@@ -6,7 +7,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-async def extract_pages_from_pdf(file_path: str) -> tuple[list[str], int]:
+def _extract_pages_from_pdf_sync(file_path: str) -> tuple[list[str], int]:
     try:
         import fitz
         doc = fitz.open(file_path)
@@ -21,12 +22,16 @@ async def extract_pages_from_pdf(file_path: str) -> tuple[list[str], int]:
         raise
 
 
+async def extract_pages_from_pdf(file_path: str) -> tuple[list[str], int]:
+    return await asyncio.to_thread(_extract_pages_from_pdf_sync, file_path)
+
+
 async def extract_text_from_pdf(file_path: str) -> tuple[str, int]:
     pages, page_count = await extract_pages_from_pdf(file_path)
     return "\n".join(pages), page_count
 
 
-async def extract_text_from_docx(file_path: str) -> str:
+def _extract_text_from_docx_sync(file_path: str) -> str:
     try:
         from docx import Document
         doc = Document(file_path)
@@ -42,7 +47,11 @@ async def extract_text_from_docx(file_path: str) -> str:
         raise
 
 
-async def extract_text_from_txt(file_path: str) -> str:
+async def extract_text_from_docx(file_path: str) -> str:
+    return await asyncio.to_thread(_extract_text_from_docx_sync, file_path)
+
+
+def _extract_text_from_txt_sync(file_path: str) -> str:
     try:
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             return f.read()
@@ -51,7 +60,11 @@ async def extract_text_from_txt(file_path: str) -> str:
         raise
 
 
-async def extract_text_from_csv(file_path: str) -> str:
+async def extract_text_from_txt(file_path: str) -> str:
+    return await asyncio.to_thread(_extract_text_from_txt_sync, file_path)
+
+
+def _extract_text_from_csv_sync(file_path: str) -> str:
     try:
         import pandas as pd
         df = pd.read_csv(file_path)
@@ -61,7 +74,11 @@ async def extract_text_from_csv(file_path: str) -> str:
         raise
 
 
-async def extract_text_from_xlsx(file_path: str) -> str:
+async def extract_text_from_csv(file_path: str) -> str:
+    return await asyncio.to_thread(_extract_text_from_csv_sync, file_path)
+
+
+def _extract_text_from_xlsx_sync(file_path: str) -> str:
     try:
         import pandas as pd
         excel_file = pd.ExcelFile(file_path)
@@ -75,7 +92,11 @@ async def extract_text_from_xlsx(file_path: str) -> str:
         raise
 
 
-async def extract_text_from_pptx(file_path: str) -> str:
+async def extract_text_from_xlsx(file_path: str) -> str:
+    return await asyncio.to_thread(_extract_text_from_xlsx_sync, file_path)
+
+
+def _extract_text_from_pptx_sync(file_path: str) -> str:
     try:
         from pptx import Presentation
         prs = Presentation(file_path)
@@ -91,6 +112,10 @@ async def extract_text_from_pptx(file_path: str) -> str:
     except Exception as e:
         logger.error(f"PPTX extraction error: {e}")
         raise
+
+
+async def extract_text_from_pptx(file_path: str) -> str:
+    return await asyncio.to_thread(_extract_text_from_pptx_sync, file_path)
 
 
 async def extract_text_from_url(url: str) -> str:
