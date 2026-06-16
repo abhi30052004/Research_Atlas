@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import re
 import time
 
@@ -12,6 +12,12 @@ from app.core.redis import connect_redis, disconnect_redis
 from app.api.v1 import auth, workspaces, sources, chat, notes, artifacts, search, analytics, exports, health, users
 
 ATLAS_VERCEL_ORIGIN_REGEX = r"^https://atlas(-[a-z0-9]+)*\.vercel\.app$"
+
+
+def build_cors_origin_regex() -> str:
+    if settings.CORS_ORIGIN_REGEX:
+        return f"(?:{settings.CORS_ORIGIN_REGEX})|(?:{ATLAS_VERCEL_ORIGIN_REGEX})"
+    return ATLAS_VERCEL_ORIGIN_REGEX
 
 
 @asynccontextmanager
@@ -35,7 +41,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
+    allow_origin_regex=build_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,7 +70,7 @@ def is_allowed_cors_origin(origin: str) -> bool:
     )
 
 
-def add_cors_headers(response: JSONResponse, origin: str) -> JSONResponse:
+def add_cors_headers(response: Response, origin: str) -> Response:
     if is_allowed_cors_origin(origin):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
@@ -87,7 +93,7 @@ async def add_process_time_header(request: Request, call_next):
     response = await call_next(request)
     process_time = time.perf_counter() - start_time
     response.headers["X-Process-Time"] = str(process_time)
-    return response
+    return add_cors_headers(response, request.headers.get("origin", ""))
 
 
 @app.middleware("http")
