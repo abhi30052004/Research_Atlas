@@ -13,9 +13,10 @@ async def extract_text_from_pdf(file_path: str) -> tuple[str, int]:
         text_parts = []
         for page in doc:
             text_parts.append(page.get_text())
+        page_count = len(doc)
         doc.close()
         full_text = "\n".join(text_parts)
-        return full_text, len(doc)
+        return full_text, page_count
     except Exception as e:
         logger.error(f"PDF extraction error: {e}")
         raise

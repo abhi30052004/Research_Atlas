@@ -2,12 +2,14 @@ import { api } from './client'
 
 export interface Source {
   id: string
-  type: 'PDF' | 'WEB' | 'DOCX'
+  type: 'PDF' | 'WEB' | 'DOCX' | 'TXT' | 'CSV' | 'XLSX' | 'PPTX'
   name: string
   meta: string
-  status: 'processed' | 'processing'
+  status: 'pending' | 'processing' | 'processed' | 'failed'
   content?: string
   workspace_id: string
+  chunkCount?: number
+  errorMessage?: string
 }
 
 export interface Artifact {

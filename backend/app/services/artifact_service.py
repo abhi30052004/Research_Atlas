@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.artifact import ArtifactType
 from app.models.analytics import EventType
+from app.models.source import ProcessingStatus
 from app.services.rag_service import rag_service
 from app.services.analytics_service import analytics_service
 
@@ -394,11 +395,80 @@ class ArtifactService:
         if not ws:
             raise HTTPException(status_code=404, detail="Workspace not found")
 
+        source_query = {"workspace_id": workspace_id, "user_id": user_id}
+        requested_source_ids = source_ids or []
+        if requested_source_ids:
+            source_query["_id"] = {"$in": requested_source_ids}
+
+        sources = []
+        async for source in db.sources.find(source_query):
+            sources.append(source)
+
+        if requested_source_ids:
+            found_source_ids = {source["_id"] for source in sources}
+            missing_source_ids = [source_id for source_id in requested_source_ids if source_id not in found_source_ids]
+            if missing_source_ids:
+                raise HTTPException(status_code=404, detail="One or more selected sources were not found.")
+
+        if not sources:
+            raise HTTPException(
+                status_code=400,
+                detail="No source documents are available. Please upload PDF, DOCX, TXT, or web URL sources first, then try generating again.",
+            )
+
+        pending_sources = [
+            source for source in sources
+            if source.get("status") in {ProcessingStatus.PENDING.value, ProcessingStatus.PROCESSING.value}
+        ]
+        failed_sources = [
+            source for source in sources
+            if source.get("status") == ProcessingStatus.FAILED.value
+        ]
+        ready_source_ids = [
+            source["_id"] for source in sources
+            if source.get("status") == ProcessingStatus.COMPLETED.value and source.get("chunk_count", 0) > 0
+        ]
+
+        if requested_source_ids and pending_sources:
+            raise HTTPException(
+                status_code=409,
+                detail="One or more selected sources are still processing. Please wait until processing completes, then try generating again.",
+            )
+
+        if requested_source_ids and failed_sources:
+            failed_names = ", ".join(source.get("original_name") or source.get("filename") or "Untitled" for source in failed_sources[:3])
+            raise HTTPException(
+                status_code=422,
+                detail=f"One or more selected sources failed to process: {failed_names}. Please delete or re-upload them before generating.",
+            )
+
+        if not ready_source_ids:
+            if pending_sources:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Your uploaded sources are still processing. Please wait until they show as processed, then try generating again.",
+                )
+            if failed_sources:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Uploaded sources failed to process. Please delete or re-upload them before generating.",
+                )
+            raise HTTPException(
+                status_code=422,
+                detail="Uploaded sources were processed, but no readable text chunks were found. Please upload a text-based PDF, DOCX, TXT, or web URL source.",
+            )
+
         query = title or artifact_type.value.replace("_", " ")
         retrieved_docs = await rag_service.retrieve(
             workspace_id, query, top_k=10,
-            source_ids=source_ids if source_ids else None,
+            source_ids=ready_source_ids,
         )
+
+        if not retrieved_docs:
+            raise HTTPException(
+                status_code=503,
+                detail="Sources are uploaded, but no indexed chunks were retrieved yet. Please try again in a moment, or re-upload the source if this continues.",
+            )
 
         system_content = (
             "You are Atlas AI, an expert research assistant that creates high-quality, "
@@ -406,21 +476,11 @@ class ArtifactService:
             "Never invent facts, statistics, or claims not present in the sources."
         )
 
-        if not retrieved_docs:
-            context = "No source material available."
-            system_content = (
-                "You are Atlas AI, an expert research assistant. "
-                "No source documents were found in this workspace. "
-                "Respond with a clear, polite message stating that no sources are available to generate this artifact. "
-                "Suggest the user upload PDF, DOCX, or web URL sources first, then try generating again. "
-                "Do NOT generate content from your own knowledge."
-            )
-        else:
-            context_parts = [
-                f"[Source: {doc.get('filename', 'Unknown')}]\n{doc['content']}"
-                for doc in retrieved_docs
-            ]
-            context = "\n\n---\n\n".join(context_parts)
+        context_parts = [
+            f"[Source: {doc.get('filename', 'Unknown')}]\n{doc['content']}"
+            for doc in retrieved_docs
+        ]
+        context = "\n\n---\n\n".join(context_parts)
 
         base_prompt = ARTIFACT_PROMPTS.get(
             artifact_type,
@@ -428,9 +488,6 @@ class ArtifactService:
         )
         if custom_prompt:
             base_prompt = f"{base_prompt}\n\nAdditional instructions from user: {custom_prompt}"
-
-        if not retrieved_docs:
-            base_prompt += "\n\nIMPORTANT: No source documents are available. Do NOT generate the requested artifact. Instead, return a short message explaining that sources must be uploaded before this artifact can be generated."
 
         full_prompt = f"{base_prompt}\n\n---\n\nSOURCE CHUNKS:\n{context}"
 
@@ -463,7 +520,7 @@ class ArtifactService:
             "title": doc_title,
             "content": content,
             "citations": citations,
-            "source_ids": source_ids or [],
+            "source_ids": ready_source_ids,
             "model_used": model,
             "tokens_used": tokens_used,
             "generation_prompt": base_prompt,

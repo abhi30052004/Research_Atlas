@@ -90,8 +90,49 @@ const SUGGESTED = ['"Summarize ESG goals"', '"Identify key risks"', '"Compare wi
 
 
 function TypeBadge({ type }: { type: Source['type'] }) {
-  const colors = { PDF: 'text-red-600 bg-red-50', WEB: 'text-blue-600 bg-blue-50', DOCX: 'text-indigo-600 bg-indigo-50' }
+  const colors: Record<Source['type'], string> = {
+    PDF: 'text-red-600 bg-red-50',
+    WEB: 'text-blue-600 bg-blue-50',
+    DOCX: 'text-indigo-600 bg-indigo-50',
+    TXT: 'text-zinc-600 bg-zinc-50',
+    CSV: 'text-emerald-600 bg-emerald-50',
+    XLSX: 'text-green-600 bg-green-50',
+    PPTX: 'text-orange-600 bg-orange-50',
+  }
   return <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded ${colors[type]}`}>{type}</span>
+}
+
+function mapSourceType(value: unknown): Source['type'] {
+  const normalized = String(value || 'PDF').toUpperCase()
+  if (normalized === 'URL' || normalized === 'WEB') return 'WEB'
+  if (['PDF', 'DOCX', 'TXT', 'CSV', 'XLSX', 'PPTX'].includes(normalized)) {
+    return normalized as Source['type']
+  }
+  return 'TXT'
+}
+
+function mapSourceStatus(value: unknown): Source['status'] {
+  const normalized = String(value || '').toLowerCase()
+  if (normalized === 'completed' || normalized === 'processed') return 'processed'
+  if (normalized === 'failed' || normalized === 'error') return 'failed'
+  if (normalized === 'pending') return 'pending'
+  return 'processing'
+}
+
+function mapApiSource(source: any, workspaceId: string): Source {
+  const fileSize = source.file_size ? `${(source.file_size / 1024).toFixed(0)} KB` : ''
+  const createdAt = new Date(source.created_at || source.createdAt || new Date()).toLocaleDateString()
+  const chunkMeta = source.chunk_count ? ` - ${source.chunk_count} chunks` : ''
+  return {
+    id: source.id || source._id,
+    type: mapSourceType(source.source_type || source.type),
+    name: source.original_name || source.filename || source.name || 'Untitled',
+    meta: source.meta || `${fileSize ? `${fileSize} - ` : ''}${createdAt}${chunkMeta}`,
+    status: mapSourceStatus(source.status),
+    workspace_id: workspaceId,
+    chunkCount: source.chunk_count || source.chunkCount || 0,
+    errorMessage: source.error_message || source.errorMessage,
+  }
 }
 
 function getTool(value: string): StudioTool | undefined {
@@ -345,11 +386,13 @@ export default function WorkspacePage() {
         ])
         setSources((fetchedSources || []).map((s: any) => ({
           id: s.id || s._id,
-          type: (s.source_type || s.type || 'PDF').toUpperCase() as Source['type'],
+          type: mapSourceType(s.source_type || s.type),
           name: s.original_name || s.filename || s.name || 'Untitled',
           meta: s.meta || `${s.file_size ? (s.file_size / 1024).toFixed(0) + ' KB' : ''} • ${new Date(s.created_at || s.createdAt || new Date()).toLocaleDateString()}`,
-          status: s.status === 'processed' || s.status === 'completed' ? 'processed' : 'processing',
-          workspace_id: workspaceId
+          status: mapSourceStatus(s.status),
+          workspace_id: workspaceId,
+          chunkCount: s.chunk_count || s.chunkCount || 0,
+          errorMessage: s.error_message || s.errorMessage
         })))
         setArtifacts((fetchedArtifacts || []).map((a: any) => {
           const tool = a.artifact_type || a.tool
@@ -396,6 +439,27 @@ export default function WorkspacePage() {
     const now = new Date()
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
   }).length
+
+  const readySources = sources.filter((s) => s.status === 'processed')
+  const hasProcessingSources = sources.some((s) => s.status === 'pending' || s.status === 'processing')
+  const hasFailedSources = sources.some((s) => s.status === 'failed')
+  const canGenerate = sources.length > 0 && readySources.length === sources.length
+
+  const refreshSources = useCallback(async () => {
+    if (!workspaceId) return
+    try {
+      const fetchedSources = await fetchSources(workspaceId)
+      setSources((fetchedSources || []).map((s: any) => mapApiSource(s, workspaceId)))
+    } catch (err) {
+      console.error('Failed to refresh sources', err)
+    }
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (!workspaceId || !hasProcessingSources) return
+    const intervalId = window.setInterval(refreshSources, 3000)
+    return () => window.clearInterval(intervalId)
+  }, [workspaceId, hasProcessingSources, refreshSources])
 
   /* ---- Chat ---- */
   const sendMessage = async (text?: string) => {
@@ -615,7 +679,7 @@ export default function WorkspacePage() {
     if (!file || !workspaceId) return
     const tempId = Date.now().toString()
     const ext = file.name.split('.').pop()?.toUpperCase() as Source['type']
-    const type: Source['type'] = ['PDF', 'DOCX'].includes(ext) ? ext : 'PDF'
+    const type = mapSourceType(ext)
     const newSource: Source = {
       id: tempId,
       type,
@@ -631,19 +695,22 @@ export default function WorkspacePage() {
       const responseSource = await uploadSource(file, workspaceId)
       const mappedSource: Source = {
         id: responseSource.id || responseSource._id,
-        type: (responseSource.source_type || responseSource.type || ext).toUpperCase() as Source['type'],
+        type: mapSourceType(responseSource.source_type || responseSource.type || ext),
         name: responseSource.original_name || responseSource.filename || responseSource.name || file.name,
         meta: `${(file.size / 1024).toFixed(0)} KB • ${new Date().toLocaleDateString()}`,
-        status: 'processed',
-        workspace_id: workspaceId
+        status: mapSourceStatus(responseSource.status),
+        workspace_id: workspaceId,
+        chunkCount: responseSource.chunk_count || responseSource.chunkCount || 0,
+        errorMessage: responseSource.error_message || responseSource.errorMessage
       }
       setSources((s) => s.map((src) => src.id === tempId ? mappedSource : src))
       addNotification({
         icon: 'source',
-        title: 'Source processed',
-        description: `${mappedSource.name} is ready to query.`,
+        title: 'Source uploaded',
+        description: `${mappedSource.name} is being processed.`,
       })
-      addToast(`"${mappedSource.name}" processed successfully`, 'success')
+      addToast(`"${mappedSource.name}" uploaded. Processing source...`, 'info')
+      refreshSources()
     } catch (error) {
       setSources((s) => s.filter((src) => src.id !== tempId))
       addToast(`Failed to upload "${file.name}"`, 'error')
@@ -673,16 +740,19 @@ export default function WorkspacePage() {
         type: 'WEB',
         name: responseSource.original_name || responseSource.filename || responseSource.name || urlValue,
         meta: urlValue,
-        status: 'processed',
-        workspace_id: workspaceId
+        status: mapSourceStatus(responseSource.status),
+        workspace_id: workspaceId,
+        chunkCount: responseSource.chunk_count || responseSource.chunkCount || 0,
+        errorMessage: responseSource.error_message || responseSource.errorMessage
       }
       setSources((s) => s.map((src) => src.id === tempId ? mappedSource : src))
       addNotification({
         icon: 'source',
-        title: 'Source processed',
-        description: `${mappedSource.name} is ready to query.`,
+        title: 'Source added',
+        description: `${mappedSource.name} is being processed.`,
       })
-      addToast('URL source processed successfully', 'success')
+      addToast('URL source added. Processing source...', 'info')
+      refreshSources()
     } catch (error) {
       setSources((s) => s.filter((src) => src.id !== tempId))
       addToast('Failed to process URL', 'error')
@@ -710,6 +780,27 @@ export default function WorkspacePage() {
       return
     }
 
+    if (sources.length === 0) {
+      addToast('Upload a PDF, DOCX, TXT, or web URL source before generating.', 'warning')
+      return
+    }
+
+    if (hasProcessingSources) {
+      addToast('Source processing is still running. Please wait until all sources are processed.', 'warning')
+      refreshSources()
+      return
+    }
+
+    if (hasFailedSources) {
+      addToast('One or more sources failed to process. Delete or re-upload failed sources before generating.', 'error')
+      return
+    }
+
+    if (readySources.length === 0) {
+      addToast('No processed sources are ready for generation yet.', 'warning')
+      return
+    }
+
     // Record AI call
     recordAICall(selectedTool)
     addToast(`Generating ${selectedTool}...`, 'info')
@@ -722,7 +813,7 @@ export default function WorkspacePage() {
         workspace_id: workspaceId,
         artifact_type: artifact_type,
         title: `${selectedTool} — ${new Date().toLocaleString()}`,
-        source_ids: sources.map(s => s.id)
+        source_ids: readySources.map(s => s.id)
       })
 
       const tool = rawArtifact.artifact_type || rawArtifact.tool || artifact_type
@@ -733,7 +824,7 @@ export default function WorkspacePage() {
         title: rawArtifact.title || formatToolName(tool),
         content: normalizeArtifactContent(tool, rawArtifact.content),
         createdAt: new Date(rawArtifact.created_at || rawArtifact.createdAt || new Date()),
-        sourceCount: rawArtifact.source_ids?.length || sources.length
+        sourceCount: rawArtifact.source_ids?.length || readySources.length
       }
 
       setArtifacts((prev) => [newArtifact, ...prev])
@@ -755,10 +846,11 @@ export default function WorkspacePage() {
           addToast(`You've reached your daily AI limit (${aiDailyLimit} calls). Increase it in Settings → AI Limits.`, 'warning')
         }, 500)
       }
-    } catch (err) {
-      addToast(`Failed to generate ${selectedTool}`, 'error')
+    } catch (err: any) {
+      const message = err?.response?.data?.detail || `Failed to generate ${selectedTool}`
+      addToast(message, 'error')
     }
-  }, [selectedTool, workspaceId, sources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast])
+  }, [selectedTool, workspaceId, sources, readySources, hasProcessingSources, hasFailedSources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast, refreshSources])
 
   /* ---- Artifact actions ---- */
   const handleDeleteArtifact = async (id: string) => {
@@ -854,17 +946,21 @@ export default function WorkspacePage() {
               </div>
             )}
             {sources.map((src) => (
-              <div key={src.id} className={`bg-surface-container-lowest border border-outline-variant p-3 rounded-lg hover:shadow-sm transition-all group ${src.status === 'processing' ? 'opacity-70' : ''}`}>
+              <div key={src.id} className={`bg-surface-container-lowest border border-outline-variant p-3 rounded-lg hover:shadow-sm transition-all group ${src.status === 'processing' || src.status === 'pending' ? 'opacity-70' : ''}`}>
                 <div className="flex items-start justify-between mb-1.5">
                   <TypeBadge type={src.type} />
                   <div className="flex items-center gap-1">
-                    {src.status === 'processing' ? (
-                      <span className="flex items-center gap-1 text-[10px] text-blue-600 font-medium">
-                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" /> Processing
+                    {src.status === 'failed' ? (
+                      <span className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
+                        <span className="w-1.5 h-1.5 bg-red-500 rounded-full" /> Failed
                       </span>
-                    ) : (
+                    ) : src.status === 'processed' ? (
                       <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium">
                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full" /> Processed
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] text-blue-600 font-medium">
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" /> {src.status === 'pending' ? 'Pending' : 'Processing'}
                       </span>
                     )}
                     <button
@@ -877,6 +973,9 @@ export default function WorkspacePage() {
                 </div>
                 <p className="text-xs font-semibold text-on-surface line-clamp-1">{src.name}</p>
                 <p className="text-[11px] text-on-surface-variant mt-0.5">{src.meta}</p>
+                {src.status === 'failed' && src.errorMessage && (
+                  <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{src.errorMessage}</p>
+                )}
               </div>
             ))}
           </div>
@@ -1373,7 +1472,8 @@ export default function WorkspacePage() {
               <p className="text-xs font-semibold text-on-surface mb-2">{selectedTool}</p>
               <button
                 onClick={handleGenerate}
-                className="w-full py-2 bg-secondary text-white rounded-lg text-xs font-medium hover:bg-indigo-600 transition-colors"
+                disabled={!canGenerate}
+                className="w-full py-2 bg-secondary text-white rounded-lg text-xs font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Generate
               </button>
