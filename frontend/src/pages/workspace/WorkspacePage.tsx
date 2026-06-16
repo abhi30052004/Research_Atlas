@@ -357,6 +357,7 @@ export default function WorkspacePage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedTool, setSelectedTool] = useState<string | null>(null)
+  const [isGeneratingArtifact, setIsGeneratingArtifact] = useState(false)
 
   // Studio Output — list of generated artifacts
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
@@ -443,7 +444,18 @@ export default function WorkspacePage() {
   const readySources = sources.filter((s) => s.status === 'processed')
   const hasProcessingSources = sources.some((s) => s.status === 'pending' || s.status === 'processing')
   const hasFailedSources = sources.some((s) => s.status === 'failed')
-  const canGenerate = sources.length > 0 && readySources.length === sources.length
+  const canGenerate = sources.length > 0 && readySources.length === sources.length && !isGeneratingArtifact
+  const generateHint = isGeneratingArtifact
+    ? `Generating ${selectedTool}...`
+    : sources.length === 0
+      ? 'Add at least one source first.'
+      : hasProcessingSources
+        ? 'Wait until source processing finishes.'
+        : hasFailedSources
+          ? 'Delete or re-upload failed sources.'
+          : readySources.length === 0
+            ? 'No processed sources are ready yet.'
+            : null
 
   const refreshSources = useCallback(async () => {
     if (!workspaceId) return
@@ -772,7 +784,7 @@ export default function WorkspacePage() {
 
   /* ---- Studio generate ---- */
   const handleGenerate = useCallback(async () => {
-    if (!selectedTool || !workspaceId) return
+    if (!selectedTool || !workspaceId || isGeneratingArtifact) return
 
     // Check AI limit before generating
     if (todayCount >= aiDailyLimit) {
@@ -801,8 +813,7 @@ export default function WorkspacePage() {
       return
     }
 
-    // Record AI call
-    recordAICall(selectedTool)
+    setIsGeneratingArtifact(true)
     addToast(`Generating ${selectedTool}...`, 'info')
 
     try {
@@ -831,6 +842,7 @@ export default function WorkspacePage() {
       setEditingArtifact(newArtifact)
       setSelectedTool(null)
       setExpandedArtifact(newArtifact.id)
+      recordAICall(selectedTool)
 
       // Notification
       addNotification({
@@ -849,8 +861,10 @@ export default function WorkspacePage() {
     } catch (err: any) {
       const message = err?.response?.data?.detail || `Failed to generate ${selectedTool}`
       addToast(message, 'error')
+    } finally {
+      setIsGeneratingArtifact(false)
     }
-  }, [selectedTool, workspaceId, sources, readySources, hasProcessingSources, hasFailedSources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast, refreshSources])
+  }, [selectedTool, workspaceId, isGeneratingArtifact, sources, readySources, hasProcessingSources, hasFailedSources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast, refreshSources])
 
   /* ---- Artifact actions ---- */
   const handleDeleteArtifact = async (id: string) => {
@@ -1475,8 +1489,17 @@ export default function WorkspacePage() {
                 disabled={!canGenerate}
                 className="w-full py-2 bg-secondary text-white rounded-lg text-xs font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Generate
+                {isGeneratingArtifact ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Generating
+                  </span>
+                ) : (
+                  'Generate'
+                )}
               </button>
+              {generateHint && (
+                <p className="mt-2 text-[11px] leading-snug text-on-surface-variant">{generateHint}</p>
+              )}
             </div>
           )}
         </aside>

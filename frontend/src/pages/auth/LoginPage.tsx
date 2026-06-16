@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useRef, useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Mail, KeyRound, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
@@ -17,11 +17,14 @@ export default function LoginPage({ transparent = true, backgroundVideo = true }
   const [showPw, setShowPw] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
   const [error, setError] = useState('')
+  const isSubmittingRef = useRef(false)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (isSubmittingRef.current) return
     setError('')
     if (!email || !password) { setError('Please fill in all fields.'); return }
+    isSubmittingRef.current = true
     setStatus('loading')
     
     try {
@@ -31,6 +34,8 @@ export default function LoginPage({ transparent = true, backgroundVideo = true }
     } catch (err: any) {
       setStatus('idle')
       setError(err.response?.data?.detail || 'Invalid email or password.')
+    } finally {
+      isSubmittingRef.current = false
     }
   }
 

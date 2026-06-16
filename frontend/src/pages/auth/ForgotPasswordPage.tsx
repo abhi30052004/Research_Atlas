@@ -1,6 +1,7 @@
-import { useState, FormEvent } from 'react'
+import { useRef, useState, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Mail, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react'
+import { api } from '../../api/client'
 
 type ForgotPasswordPageProps = {
   transparent?: boolean
@@ -10,6 +11,8 @@ type ForgotPasswordPageProps = {
 export default function ForgotPasswordPage({ transparent = true, backgroundVideo = true }: ForgotPasswordPageProps) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'sent'>('idle')
+  const [error, setError] = useState('')
+  const isSubmittingRef = useRef(false)
 
   const containerClassName = backgroundVideo
     ? 'relative min-h-screen flex items-center justify-center lg:justify-end lg:pr-[10%] w-full p-4 font-sans fade-in'
@@ -42,11 +45,22 @@ export default function ForgotPasswordPage({ transparent = true, backgroundVideo
   const cardTextClass = transparent ? 'text-white' : 'text-on-surface'
   const subtitleTextClass = transparent ? 'text-slate-300' : 'text-on-surface-variant'
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (isSubmittingRef.current) return
+    setError('')
     if (!email) return
+    isSubmittingRef.current = true
     setStatus('loading')
-    setTimeout(() => setStatus('sent'), 1500)
+    try {
+      await api.post('/auth/forgot-password', { email })
+      setStatus('sent')
+    } catch (err: any) {
+      setStatus('idle')
+      setError(err.response?.data?.detail || 'Unable to send reset link. Please try again.')
+    } finally {
+      isSubmittingRef.current = false
+    }
   }
 
   return (
@@ -104,6 +118,12 @@ export default function ForgotPasswordPage({ transparent = true, backgroundVideo
                 <h1 className={`text-xl font-semibold mb-1 ${cardTextClass}`}>Reset your password</h1>
                 <p className={`text-sm ${subtitleTextClass}`}>Enter your email and we'll send you a reset link.</p>
               </div>
+
+              {error && (
+                <div className={`mb-4 px-4 py-3 rounded-lg text-sm ${transparent ? 'bg-red-500/15 border border-red-400/30 text-red-100' : 'bg-error-container border border-error/20 text-on-error-container'}`}>
+                  {error}
+                </div>
+              )}
 
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-1.5">
