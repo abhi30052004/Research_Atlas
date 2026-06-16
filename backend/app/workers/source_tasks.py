@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 from app.workers.celery_app import celery_app
@@ -66,16 +67,20 @@ async def _process_source(source_id: str):
     )
 
     try:
+        t0 = time.perf_counter()
+
         # --- Phase 1: Extract text ---
         source_type = source.get("source_type")
         text = ""
         page_count = None
         chunks = []
 
+        await _update_progress(db, source_id, "extracting", 8)
+
         if source_type == SourceType.PDF.value:
             pages, page_count = await extract_pages_from_pdf(source["file_path"])
             text = "\n".join(pages)
-            await _update_progress(db, source_id, "chunking", 20)
+            await _update_progress(db, source_id, "extracting", 15)
             chunks = chunk_text_with_pages(pages, source_id, source["filename"])
         elif source_type == SourceType.DOCX.value:
             text = await extract_text_from_docx(source["file_path"])
@@ -90,15 +95,26 @@ async def _process_source(source_id: str):
         elif source_type == SourceType.URL.value:
             text = await extract_text_from_url(source["url"])
 
+        t_extract = time.perf_counter()
+        logger.info("Source %s extraction took %.2fs", source_id, t_extract - t0)
+
         # --- Phase 2: Chunk ---
         word_count = len(text.split()) if text else 0
+        await _update_progress(db, source_id, "chunking", 18)
         if not chunks:
-            await _update_progress(db, source_id, "chunking", 20)
             chunks = chunk_text(text, source_id, source["filename"])
 
-        await _update_progress(db, source_id, "storing_chunks", 30)
+        t_chunk = time.perf_counter()
+        logger.info(
+            "Source %s chunking took %.2fs (%d words -> %d chunks)",
+            source_id, t_chunk - t_extract, word_count, len(chunks),
+        )
+
+        await _update_progress(db, source_id, "storing_chunks", 25)
         chunk_count = await rag_service.store_source_chunks(source["workspace_id"], source_id, chunks)
         now = datetime.now(timezone.utc)
+        t_store = time.perf_counter()
+        logger.info("Source %s chunk storage took %.2fs", source_id, t_store - t_chunk)
 
         if settings.SOURCE_FAST_READY_BEFORE_EMBEDDING:
             await db.sources.update_one(
@@ -165,7 +181,11 @@ async def _process_source(source_id: str):
                 },
             )
 
-        logger.info(f"Source {source_id} text-ready: {chunk_count} chunks")
+        t_total = time.perf_counter()
+        logger.info(
+            "Source %s fully processed in %.2fs: %d chunks, %d words",
+            source_id, t_total - t0, chunk_count, word_count,
+        )
 
     except Exception as e:
         logger.error(f"Failed to process source {source_id}: {e}")

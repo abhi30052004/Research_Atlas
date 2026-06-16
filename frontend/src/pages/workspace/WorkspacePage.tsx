@@ -88,10 +88,11 @@ const STUDIO_TOOLS = [
 ]
 
 const SUGGESTED = ['"Summarize ESG goals"', '"Identify key risks"', '"Compare with Q3"']
-const SOURCE_REFRESH_FAST_MS = 500
-const SOURCE_REFRESH_SLOW_MS = 3000
-const SOURCE_REFRESH_BACKOFF_AFTER_MS = 10000
-const SOURCE_REFRESH_AFTER_UPLOAD_MS = 800
+const SOURCE_REFRESH_FAST_MS = 2000
+const SOURCE_REFRESH_SLOW_MS = 5000
+const SOURCE_REFRESH_BACKOFF_AFTER_MS = 15000
+const SOURCE_REFRESH_AFTER_UPLOAD_MS = 1500
+const MAX_POLL_DURATION_MS = 5 * 60 * 1000 // 5 minutes
 
 const PROGRESS_STAGE_LABELS: Record<string, string> = {
   extracting: 'Extracting text…',
@@ -487,12 +488,17 @@ export default function WorkspacePage() {
     try {
       const fetchedSources = await fetchSources(workspaceId)
       setSources((fetchedSources || []).map((s: any) => mapApiSource(s, workspaceId)))
-    } catch (err) {
+    } catch (err: any) {
+      // If 401 and auto-refresh also failed, stop polling silently
+      if (err?.response?.status === 401) {
+        console.warn('Source polling stopped: authentication expired')
+        return
+      }
       console.error('Failed to refresh sources', err)
     }
   }, [workspaceId])
 
-  // Adaptive polling: fast right after upload, slows down over time
+  // Adaptive polling: fast right after upload, slows down over time, caps at MAX_POLL_DURATION_MS
   const processingStartRef = useRef<number | null>(null)
   useEffect(() => {
     if (!workspaceId || !hasProcessingSources) {
@@ -504,8 +510,14 @@ export default function WorkspacePage() {
     }
     let timerId: number
     const tick = () => {
-      refreshSources()
       const elapsed = Date.now() - (processingStartRef.current || Date.now())
+      // Stop polling after MAX_POLL_DURATION_MS to prevent zombie loops
+      if (elapsed > MAX_POLL_DURATION_MS) {
+        console.warn('Source polling capped at 5 minutes — stopping')
+        processingStartRef.current = null
+        return
+      }
+      refreshSources()
       const delay = elapsed < SOURCE_REFRESH_BACKOFF_AFTER_MS
         ? SOURCE_REFRESH_FAST_MS
         : SOURCE_REFRESH_SLOW_MS
@@ -1022,7 +1034,7 @@ export default function WorkspacePage() {
               </div>
             )}
             {sources.map((src) => (
-              <div key={src.id} className={`bg-surface-container-lowest border border-outline-variant p-3 rounded-lg hover:shadow-sm transition-all group ${src.status === 'processing' || src.status === 'pending' ? 'opacity-80' : ''}`}>
+              <div key={src.id} className={`bg-surface-container-lowest border border-outline-variant p-3 rounded-lg hover:shadow-sm transition-all group ${src.status === 'processing' || src.status === 'pending' ? 'opacity-90' : ''}`}>
                 <div className="flex items-start justify-between mb-1.5">
                   <TypeBadge type={src.type} />
                   <div className="flex items-center gap-1">
@@ -1032,7 +1044,7 @@ export default function WorkspacePage() {
                       </span>
                     ) : src.status === 'processed' ? (
                       <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium">
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full" /> {src.progressStage === 'embedding_failed' ? 'Ready (indexing failed)' : 'Processed'}
+                        <Check className="w-3 h-3" /> {src.progressStage === 'embedding_failed' ? 'Ready (indexing failed)' : 'Ready'}
                       </span>
                     ) : (
                       <span className="flex items-center gap-1 text-[10px] text-blue-600 font-medium">
@@ -1049,12 +1061,27 @@ export default function WorkspacePage() {
                 </div>
                 <p className="text-xs font-semibold text-on-surface line-clamp-1">{src.name}</p>
                 <p className="text-[11px] text-on-surface-variant mt-0.5">{src.meta}</p>
-                {(src.status === 'processing' || src.status === 'pending') && typeof src.progressPct === 'number' && (
-                  <div className="mt-1.5 w-full bg-surface-container rounded-full h-1 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${Math.max(2, src.progressPct)}%` }}
-                    />
+                {(src.status === 'processing' || src.status === 'pending') && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-medium text-blue-600">
+                        {progressStageLabel(src.progressStage)}
+                      </span>
+                      {typeof src.progressPct === 'number' && (
+                        <span className="text-[10px] font-mono font-semibold text-blue-600">
+                          {src.progressPct}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700 ease-out"
+                        style={{
+                          width: `${Math.max(3, src.progressPct ?? 5)}%`,
+                          background: 'linear-gradient(90deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%)',
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
                 {src.status === 'failed' && src.errorMessage && (

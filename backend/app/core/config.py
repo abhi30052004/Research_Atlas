@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     MONGODB_URL: str = "mongodb://localhost:27017"
@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     RETRIEVAL_TOP_K: int = 5
     RETRIEVAL_MIN_RELEVANCE: float = 0.25
     ARTIFACT_RETRIEVAL_TOP_K: int = 18
-    EMBEDDING_BATCH_SIZE: int = 512
-    EMBEDDING_CONCURRENCY: int = 8
+    EMBEDDING_BATCH_SIZE: int = 1024
+    EMBEDDING_CONCURRENCY: int = 12
     CHROMA_ADD_BATCH_SIZE: int = 500
     CHROMA_UPSERT_CONCURRENCY: int = 3
     SEARCH_LEGACY_COLLECTIONS: bool = True

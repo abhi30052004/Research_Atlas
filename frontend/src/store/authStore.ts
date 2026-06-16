@@ -12,12 +12,14 @@ interface User {
 interface AuthState {
   user: User | null
   token: string | null
+  refreshToken: string | null
   isAuthenticated: boolean
-  login: (user: User, token: string) => void
+  login: (user: User, token: string, refreshToken?: string) => void
   logout: () => void
   loginApi: (credentials: any) => Promise<void>
   registerApi: (userData: any) => Promise<void>
   logoutApi: () => Promise<void>
+  refreshTokenApi: () => Promise<string | null>
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -25,26 +27,33 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      refreshToken: null,
       isAuthenticated: false,
-      login: (user, token) => set({ user, token, isAuthenticated: true }),
-      logout: () => set({ user: null, token: null, isAuthenticated: false }),
-      
+      login: (user, token, refreshToken) =>
+        set({ user, token, refreshToken: refreshToken || null, isAuthenticated: true }),
+      logout: () =>
+        set({ user: null, token: null, refreshToken: null, isAuthenticated: false }),
+
       loginApi: async (credentials) => {
         const { data: tokenData } = await api.post('/auth/login', credentials)
-        
-        // Temporarily set token so the interceptor uses it for the /me request
-        set({ token: tokenData.access_token })
-        
+
+        // Store both access and refresh tokens
+        set({
+          token: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+        })
+
         const { data: userData } = await api.get('/auth/me')
         set({
           user: {
             id: userData.id,
             name: userData.full_name || userData.username,
             email: userData.email,
-            avatar: userData.avatar_url
+            avatar: userData.avatar_url,
           },
           token: tokenData.access_token,
-          isAuthenticated: true
+          refreshToken: tokenData.refresh_token,
+          isAuthenticated: true,
         })
       },
 
@@ -56,14 +65,49 @@ export const useAuthStore = create<AuthState>()(
 
       logoutApi: async () => {
         try {
-          if (get().token) {
-            // Optional: Call backend logout if it exists and takes refresh token, 
-            // but for simple JWT we just clear the store
+          const rt = get().refreshToken
+          if (rt && get().token) {
+            try {
+              await api.post('/auth/logout', { refresh_token: rt })
+            } catch {
+              // Ignore logout API errors — we clear local state regardless
+            }
           }
         } finally {
-          set({ user: null, token: null, isAuthenticated: false })
+          set({ user: null, token: null, refreshToken: null, isAuthenticated: false })
         }
-      }
+      },
+
+      /**
+       * Attempt to refresh the access token using the stored refresh token.
+       * Returns the new access token on success, or null on failure (also logs out).
+       */
+      refreshTokenApi: async () => {
+        const rt = get().refreshToken
+        if (!rt) {
+          get().logout()
+          return null
+        }
+
+        try {
+          // Use a raw axios call to avoid the interceptor loop
+          const { default: axios } = await import('axios')
+          const { API_BASE_URL } = await import('../api/config')
+          const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+            refresh_token: rt,
+          })
+
+          set({
+            token: data.access_token,
+            refreshToken: data.refresh_token,
+          })
+          return data.access_token
+        } catch {
+          // Refresh token is expired or revoked — full logout
+          set({ user: null, token: null, refreshToken: null, isAuthenticated: false })
+          return null
+        }
+      },
     }),
     { name: 'atlas-auth' }
   )
