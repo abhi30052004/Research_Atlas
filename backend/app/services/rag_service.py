@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
 import chromadb
 from openai import AsyncOpenAI
@@ -38,16 +39,28 @@ class RAGService:
         if not texts:
             return []
         client = self._get_openai()
-        embeddings = []
-        for batch in self._batched(texts, settings.EMBEDDING_BATCH_SIZE):
-            response = await client.embeddings.create(
-                model=settings.OPENAI_EMBEDDING_MODEL,
-                input=batch,
-            )
+        batches = list(enumerate(self._batched(texts, settings.EMBEDDING_BATCH_SIZE)))
+        concurrency = max(1, settings.EMBEDDING_CONCURRENCY)
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def embed_batch(batch_index: int, batch: List[str]):
+            async with semaphore:
+                response = await client.embeddings.create(
+                    model=settings.OPENAI_EMBEDDING_MODEL,
+                    input=batch,
+                )
             data = list(response.data)
             if all(isinstance(getattr(item, "index", None), int) for item in data):
                 data.sort(key=lambda item: item.index)
-            embeddings.extend(item.embedding for item in data)
+            return batch_index, [item.embedding for item in data]
+
+        batch_results = await asyncio.gather(
+            *(embed_batch(index, batch) for index, batch in batches)
+        )
+
+        embeddings = []
+        for _, batch_embeddings in sorted(batch_results, key=lambda item: item[0]):
+            embeddings.extend(batch_embeddings)
         return embeddings
 
     async def index_chunks(self, workspace_id: str, chunks: List[Dict[str, Any]]) -> int:
@@ -63,7 +76,7 @@ class RAGService:
             embeddings = await self.embed_texts(texts)
             ids = [c["chunk_id"] for c in batch]
             metadatas = [c["metadata"] for c in batch]
-            await collection.add(
+            await collection.upsert(
                 ids=ids,
                 embeddings=embeddings,
                 documents=texts,

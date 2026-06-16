@@ -5,6 +5,7 @@ from typing import List, Optional
 from bson import ObjectId
 from fastapi import BackgroundTasks, HTTPException, UploadFile
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.source import ProcessingStatus, SourceType
 from app.utils.file_utils import save_upload_file, delete_file
@@ -16,6 +17,10 @@ logger = logging.getLogger(__name__)
 class SourceService:
     async def _enqueue_processing(self, source_id: str) -> None:
         try:
+            from app.core.redis import redis_client
+
+            if redis_client is None:
+                raise RuntimeError("Redis/Celery broker is not connected")
             await asyncio.to_thread(process_source_task.delay, source_id)
             logger.info("Queued source %s for Celery processing", source_id)
         except Exception as exc:
@@ -40,6 +45,49 @@ class SourceService:
             return
 
         asyncio.create_task(self._enqueue_processing(source_id))
+
+    def _source_age_seconds(self, source: dict) -> float:
+        updated_at = source.get("updated_at") or source.get("created_at")
+        if not updated_at:
+            return 0
+        if isinstance(updated_at, str):
+            updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - updated_at).total_seconds()
+
+    def _is_stale_for_requeue(self, source: dict) -> bool:
+        status = source.get("status")
+        age = self._source_age_seconds(source)
+        if status == ProcessingStatus.PENDING.value:
+            return age > settings.STALE_PENDING_REQUEUE_SECONDS
+        if status == ProcessingStatus.PROCESSING.value:
+            return age > settings.STALE_PROCESSING_REQUEUE_SECONDS
+        return False
+
+    async def _requeue_stale_sources(self, sources: List[dict]) -> None:
+        stale_sources = [source for source in sources if self._is_stale_for_requeue(source)]
+        if not stale_sources:
+            return
+
+        db = get_db()
+        now = datetime.now(timezone.utc)
+        for source in stale_sources:
+            source_id = str(source["_id"])
+            result = await db.sources.update_one(
+                {"_id": source_id, "status": source["status"]},
+                {
+                    "$set": {
+                        "status": ProcessingStatus.PENDING.value,
+                        "updated_at": now,
+                        "metadata.requeued_at": now.isoformat(),
+                    }
+                },
+            )
+            if result.matched_count:
+                source["status"] = ProcessingStatus.PENDING.value
+                source["updated_at"] = now
+                self._schedule_processing(source_id)
 
     async def upload_file(
         self,
@@ -149,6 +197,7 @@ class SourceService:
         async for src in cursor:
             src["id"] = str(src["_id"])
             sources.append(src)
+        await self._requeue_stale_sources(sources)
         return {"sources": sources, "total": total, "page": page, "page_size": page_size}
 
     async def delete(self, source_id: str, user_id: str) -> None:

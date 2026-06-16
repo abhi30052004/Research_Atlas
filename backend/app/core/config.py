@@ -53,13 +53,16 @@ class Settings(BaseSettings):
     CORS_ORIGIN_REGEX: str = r"^https://atlas-[a-z0-9-]+-abhibhunia68-2333s-projects\.vercel\.app$"
     FRONTEND_URL: str = "https://atlas-swart-kappa-13.vercel.app"
 
-    CHUNK_SIZE: int = 1000
-    CHUNK_OVERLAP: int = 200
+    CHUNK_SIZE: int = 1600
+    CHUNK_OVERLAP: int = 150
     RETRIEVAL_TOP_K: int = 5
     RETRIEVAL_MIN_RELEVANCE: float = 0.25
     ARTIFACT_RETRIEVAL_TOP_K: int = 18
-    EMBEDDING_BATCH_SIZE: int = 64
-    CHROMA_ADD_BATCH_SIZE: int = 128
+    EMBEDDING_BATCH_SIZE: int = 128
+    EMBEDDING_CONCURRENCY: int = 3
+    CHROMA_ADD_BATCH_SIZE: int = 256
+    STALE_PENDING_REQUEUE_SECONDS: int = 120
+    STALE_PROCESSING_REQUEUE_SECONDS: int = 900
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

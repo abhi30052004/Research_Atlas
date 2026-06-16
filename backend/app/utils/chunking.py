@@ -1,4 +1,5 @@
 from typing import List, Dict, Any
+from bisect import bisect_right
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from app.core.config import settings
@@ -54,29 +55,52 @@ def chunk_text_with_pages(
         separators=["\n\n", "\n", ". ", " ", ""],
     )
 
+    page_offsets = []
+    full_text_parts = []
+    cursor = 0
+    for page_text in pages:
+        page_offsets.append(cursor)
+        full_text_parts.append(page_text)
+        cursor += len(page_text) + 2
+
+    full_text = "\n\n".join(full_text_parts)
+    split_chunks = splitter.split_text(full_text)
     result = []
-    chunk_idx = 0
-    for page_num, page_text in enumerate(pages, 1):
-        if not page_text.strip():
+    search_from = 0
+
+    for chunk_idx, chunk in enumerate(split_chunks):
+        chunk = chunk.strip()
+        if not chunk:
             continue
-        chunks = splitter.split_text(page_text)
-        for chunk in chunks:
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            result.append(
-                {
-                    "chunk_id": f"{source_id}_chunk_{chunk_idx}",
-                    "content": chunk,
-                    "metadata": {
-                        "source_id": source_id,
-                        "filename": filename,
-                        "page_number": page_num,
-                        "chunk_index": chunk_idx,
-                    },
-                }
-            )
-            chunk_idx += 1
+
+        chunk_start = full_text.find(chunk, search_from)
+        if chunk_start == -1:
+            chunk_start = full_text.find(chunk)
+        if chunk_start == -1:
+            chunk_start = search_from
+        chunk_end = chunk_start + len(chunk)
+        search_from = chunk_end
+
+        start_page = max(1, bisect_right(page_offsets, chunk_start))
+        end_page = max(start_page, bisect_right(page_offsets, chunk_end))
+        metadata = {
+            "source_id": source_id,
+            "filename": filename,
+            "page_number": start_page,
+            "page_start": start_page,
+            "chunk_index": len(result),
+        }
+        if end_page != start_page:
+            metadata["page_end"] = end_page
+
+        result.append(
+            {
+                "chunk_id": f"{source_id}_chunk_{len(result)}",
+                "content": chunk,
+                "metadata": metadata,
+            }
+        )
+
     for chunk in result:
         chunk["metadata"]["chunk_total"] = len(result)
     return result
