@@ -42,6 +42,10 @@ services:
         value: "4"
       - key: CHROMA_ADD_BATCH_SIZE
         value: "256"
+      - key: SOURCE_FAST_READY_BEFORE_EMBEDDING
+        value: "true"
+      - key: KEYWORD_FALLBACK_CHUNK_LIMIT
+        value: "1000"
       - key: STALE_PENDING_REQUEUE_SECONDS
         value: "120"
       - key: STALE_PROCESSING_REQUEUE_SECONDS
@@ -81,6 +85,10 @@ services:
         value: "4"
       - key: CHROMA_ADD_BATCH_SIZE
         value: "256"
+      - key: SOURCE_FAST_READY_BEFORE_EMBEDDING
+        value: "true"
+      - key: KEYWORD_FALLBACK_CHUNK_LIMIT
+        value: "1000"
       - key: STALE_PENDING_REQUEUE_SECONDS
         value: "120"
       - key: STALE_PROCESSING_REQUEUE_SECONDS

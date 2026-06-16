@@ -49,6 +49,11 @@ async def _create_indexes() -> None:
     await database.sources.create_index("user_id")
     await database.sources.create_index([("filename", "text"), ("original_name", "text")])
 
+    await database.source_chunks.create_index("workspace_id")
+    await database.source_chunks.create_index("source_id")
+    await database.source_chunks.create_index([("workspace_id", 1), ("chunk_index", 1)])
+    await database.source_chunks.create_index([("source_id", 1), ("chunk_index", 1)])
+
     await database.chats.create_index("workspace_id")
     await database.chats.create_index("user_id")
     await database.chats.create_index([("messages.content", "text")])

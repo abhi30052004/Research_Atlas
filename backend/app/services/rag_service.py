@@ -6,6 +6,7 @@ import chromadb
 from openai import AsyncOpenAI
 
 from app.core.config import settings
+from app.core.database import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,34 @@ class RAGService:
         batch_size = max(1, batch_size)
         for index in range(0, len(items), batch_size):
             yield items[index: index + batch_size]
+
+    async def store_source_chunks(
+        self,
+        workspace_id: str,
+        source_id: str,
+        chunks: List[Dict[str, Any]],
+    ) -> int:
+        db = get_db()
+        await db.source_chunks.delete_many({"source_id": source_id})
+        if not chunks:
+            return 0
+
+        now_docs = []
+        for chunk in chunks:
+            metadata = chunk.get("metadata", {})
+            now_docs.append({
+                "_id": chunk["chunk_id"],
+                "workspace_id": workspace_id,
+                "source_id": source_id,
+                "chunk_id": chunk["chunk_id"],
+                "content": chunk["content"],
+                "filename": metadata.get("filename"),
+                "page_number": metadata.get("page_number"),
+                "chunk_index": metadata.get("chunk_index", 0),
+                "metadata": metadata,
+            })
+        await db.source_chunks.insert_many(now_docs, ordered=False)
+        return len(now_docs)
 
     def _embedding_dimensions_for_model(
         self,
@@ -180,6 +209,74 @@ class RAGService:
             logger.debug(f"Retrieval skipped for collection {collection_name}: {e}")
             return []
 
+    def _query_terms(self, query: str) -> List[str]:
+        terms = re.findall(r"[a-zA-Z0-9]{3,}", query.lower())
+        stopwords = {
+            "the", "and", "for", "with", "that", "this", "from", "what", "when",
+            "where", "which", "about", "into", "your", "please", "summarize",
+        }
+        return [term for term in terms if term not in stopwords][:12]
+
+    async def _retrieve_from_mongo_chunks(
+        self,
+        workspace_id: str,
+        query: str,
+        top_k: int,
+        source_ids: Optional[List[str]],
+    ) -> List[Dict[str, Any]]:
+        try:
+            db = get_db()
+            mongo_query = {"workspace_id": workspace_id}
+            if source_ids:
+                mongo_query["source_id"] = {"$in": source_ids}
+
+            cursor = (
+                db.source_chunks.find(mongo_query)
+                .sort("chunk_index", 1)
+                .limit(settings.KEYWORD_FALLBACK_CHUNK_LIMIT)
+            )
+            terms = self._query_terms(query)
+            docs = []
+            async for chunk in cursor:
+                content = chunk.get("content", "")
+                lowered = content.lower()
+                score = sum(lowered.count(term) for term in terms)
+                if terms and score == 0:
+                    continue
+                metadata = chunk.get("metadata", {})
+                docs.append({
+                    "content": content,
+                    "metadata": metadata,
+                    "relevance_score": min(0.95, 0.45 + (score * 0.05)) if terms else 0.45,
+                    "source_id": chunk.get("source_id"),
+                    "filename": chunk.get("filename") or metadata.get("filename"),
+                    "page_number": chunk.get("page_number") or metadata.get("page_number"),
+                    "chunk_id": chunk.get("chunk_id") or str(chunk.get("_id")),
+                })
+
+            if not docs:
+                fallback_cursor = (
+                    db.source_chunks.find(mongo_query)
+                    .sort("chunk_index", 1)
+                    .limit(top_k)
+                )
+                async for chunk in fallback_cursor:
+                    metadata = chunk.get("metadata", {})
+                    docs.append({
+                        "content": chunk.get("content", ""),
+                        "metadata": metadata,
+                        "relevance_score": 0.4,
+                        "source_id": chunk.get("source_id"),
+                        "filename": chunk.get("filename") or metadata.get("filename"),
+                        "page_number": chunk.get("page_number") or metadata.get("page_number"),
+                        "chunk_id": chunk.get("chunk_id") or str(chunk.get("_id")),
+                    })
+
+            return sorted(docs, key=lambda x: x["relevance_score"], reverse=True)[:top_k]
+        except Exception as e:
+            logger.debug(f"Mongo chunk fallback retrieval failed for workspace {workspace_id}: {e}")
+            return []
+
     async def retrieve(
         self,
         workspace_id: str,
@@ -207,6 +304,13 @@ class RAGService:
                         settings.LEGACY_EMBEDDING_MODEL,
                         settings.LEGACY_EMBEDDING_DIMENSIONS,
                     ))
+            if len(docs) < top_k:
+                docs.extend(await self._retrieve_from_mongo_chunks(
+                    workspace_id,
+                    query,
+                    top_k,
+                    source_ids,
+                ))
 
             deduped = {}
             for doc in docs:
@@ -219,6 +323,8 @@ class RAGService:
             return []
 
     async def delete_source_chunks(self, workspace_id: str, source_id: str) -> None:
+        db = get_db()
+        await db.source_chunks.delete_many({"source_id": source_id})
         chroma = await self._get_chroma()
         collection_names = [self.collection_name(workspace_id), *self.legacy_collection_names(workspace_id)]
         for collection_name in dict.fromkeys(collection_names):

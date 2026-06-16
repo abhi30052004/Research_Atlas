@@ -71,24 +71,61 @@ async def _process_source(source_id: str):
         if not chunks:
             chunks = chunk_text(text, source_id, source["filename"])
 
-        chunk_count = await rag_service.index_chunks(source["workspace_id"], chunks)
+        chunk_count = await rag_service.store_source_chunks(source["workspace_id"], source_id, chunks)
+        now = datetime.now(timezone.utc)
 
-        await db.sources.update_one(
-            {"_id": source_id},
-            {
-                "$set": {
-                    "status": ProcessingStatus.COMPLETED.value,
-                    "chunk_count": chunk_count,
-                    "page_count": page_count,
-                    "word_count": word_count,
-                    "metadata.embedding_model": settings.OPENAI_EMBEDDING_MODEL,
-                    "metadata.embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
-                    "metadata.chroma_collection": rag_service.collection_name(source["workspace_id"]),
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            },
-        )
-        logger.info(f"Source {source_id} processed: {chunk_count} chunks")
+        if settings.SOURCE_FAST_READY_BEFORE_EMBEDDING:
+            await db.sources.update_one(
+                {"_id": source_id},
+                {
+                    "$set": {
+                        "status": ProcessingStatus.COMPLETED.value,
+                        "chunk_count": chunk_count,
+                        "page_count": page_count,
+                        "word_count": word_count,
+                        "metadata.embedding_status": "indexing",
+                        "metadata.embedding_model": settings.OPENAI_EMBEDDING_MODEL,
+                        "metadata.embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
+                        "metadata.chroma_collection": rag_service.collection_name(source["workspace_id"]),
+                        "updated_at": now,
+                    }
+                },
+            )
+
+        try:
+            await rag_service.index_chunks(source["workspace_id"], chunks)
+            await db.sources.update_one(
+                {"_id": source_id},
+                {
+                    "$set": {
+                        "status": ProcessingStatus.COMPLETED.value,
+                        "chunk_count": chunk_count,
+                        "page_count": page_count,
+                        "word_count": word_count,
+                        "metadata.embedding_status": "indexed",
+                        "metadata.embedding_model": settings.OPENAI_EMBEDDING_MODEL,
+                        "metadata.embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
+                        "metadata.chroma_collection": rag_service.collection_name(source["workspace_id"]),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+        except Exception as embedding_error:
+            if not settings.SOURCE_FAST_READY_BEFORE_EMBEDDING:
+                raise
+            logger.warning(f"Embedding index failed for source {source_id}: {embedding_error}")
+            await db.sources.update_one(
+                {"_id": source_id},
+                {
+                    "$set": {
+                        "metadata.embedding_status": "failed",
+                        "metadata.embedding_error": str(embedding_error)[:500],
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+
+        logger.info(f"Source {source_id} text-ready: {chunk_count} chunks")
 
     except Exception as e:
         logger.error(f"Failed to process source {source_id}: {e}")
