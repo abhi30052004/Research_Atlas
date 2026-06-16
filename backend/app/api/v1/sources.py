@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, status, Query
-from typing import Optional
+from typing import List, Optional
 
 from app.schemas.source import SourceURLCreate, SourceResponse, SourceListResponse
 from app.services.source_service import source_service
@@ -21,6 +21,23 @@ async def upload_source(
         str(current_user["_id"]),
         background_tasks,
     )
+
+
+@router.post("/upload/batch", status_code=status.HTTP_202_ACCEPTED)
+async def upload_sources_batch(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    workspace_id: str = Query(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload multiple files at once. All are saved and queued for processing concurrently."""
+    results = await source_service.upload_files_batch(
+        files,
+        workspace_id,
+        str(current_user["_id"]),
+        background_tasks,
+    )
+    return {"sources": results}
 
 
 @router.post("/url", status_code=status.HTTP_202_ACCEPTED)

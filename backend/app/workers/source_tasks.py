@@ -12,6 +12,20 @@ def process_source_task(self, source_id: str):
     asyncio.run(_process_source(source_id))
 
 
+async def _update_progress(db, source_id: str, stage: str, pct: int):
+    """Write granular progress to the database so the frontend can display it."""
+    await db.sources.update_one(
+        {"_id": source_id},
+        {
+            "$set": {
+                "metadata.progress_stage": stage,
+                "metadata.progress_pct": max(0, min(100, pct)),
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+
 async def _process_source(source_id: str):
     from app.core.database import connect_db, get_db
     from app.utils.extractors import (
@@ -41,10 +55,18 @@ async def _process_source(source_id: str):
 
     await db.sources.update_one(
         {"_id": source_id},
-        {"$set": {"status": ProcessingStatus.PROCESSING.value, "updated_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "status": ProcessingStatus.PROCESSING.value,
+                "metadata.progress_stage": "extracting",
+                "metadata.progress_pct": 5,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
     )
 
     try:
+        # --- Phase 1: Extract text ---
         source_type = source.get("source_type")
         text = ""
         page_count = None
@@ -53,6 +75,7 @@ async def _process_source(source_id: str):
         if source_type == SourceType.PDF.value:
             pages, page_count = await extract_pages_from_pdf(source["file_path"])
             text = "\n".join(pages)
+            await _update_progress(db, source_id, "chunking", 20)
             chunks = chunk_text_with_pages(pages, source_id, source["filename"])
         elif source_type == SourceType.DOCX.value:
             text = await extract_text_from_docx(source["file_path"])
@@ -67,10 +90,13 @@ async def _process_source(source_id: str):
         elif source_type == SourceType.URL.value:
             text = await extract_text_from_url(source["url"])
 
+        # --- Phase 2: Chunk ---
         word_count = len(text.split()) if text else 0
         if not chunks:
+            await _update_progress(db, source_id, "chunking", 20)
             chunks = chunk_text(text, source_id, source["filename"])
 
+        await _update_progress(db, source_id, "storing_chunks", 30)
         chunk_count = await rag_service.store_source_chunks(source["workspace_id"], source_id, chunks)
         now = datetime.now(timezone.utc)
 
@@ -84,6 +110,8 @@ async def _process_source(source_id: str):
                         "page_count": page_count,
                         "word_count": word_count,
                         "metadata.embedding_status": "indexing",
+                        "metadata.progress_stage": "embedding",
+                        "metadata.progress_pct": 35,
                         "metadata.embedding_model": settings.OPENAI_EMBEDDING_MODEL,
                         "metadata.embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
                         "metadata.chroma_collection": rag_service.collection_name(source["workspace_id"]),
@@ -92,8 +120,16 @@ async def _process_source(source_id: str):
                 },
             )
 
+        # --- Phase 3: Embed + Index (the slow part, now parallelized) ---
+        async def _progress_cb(stage: str, pct: int):
+            await _update_progress(db, source_id, stage, pct)
+
         try:
-            await rag_service.index_chunks(source["workspace_id"], chunks)
+            await rag_service.index_chunks(
+                source["workspace_id"],
+                chunks,
+                progress_callback=_progress_cb,
+            )
             await db.sources.update_one(
                 {"_id": source_id},
                 {
@@ -103,6 +139,8 @@ async def _process_source(source_id: str):
                         "page_count": page_count,
                         "word_count": word_count,
                         "metadata.embedding_status": "indexed",
+                        "metadata.progress_stage": "completed",
+                        "metadata.progress_pct": 100,
                         "metadata.embedding_model": settings.OPENAI_EMBEDDING_MODEL,
                         "metadata.embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
                         "metadata.chroma_collection": rag_service.collection_name(source["workspace_id"]),
@@ -120,6 +158,8 @@ async def _process_source(source_id: str):
                     "$set": {
                         "metadata.embedding_status": "failed",
                         "metadata.embedding_error": str(embedding_error)[:500],
+                        "metadata.progress_stage": "embedding_failed",
+                        "metadata.progress_pct": 100,
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
@@ -135,6 +175,8 @@ async def _process_source(source_id: str):
                 "$set": {
                     "status": ProcessingStatus.FAILED.value,
                     "error_message": str(e)[:500],
+                    "metadata.progress_stage": "failed",
+                    "metadata.progress_pct": 0,
                     "updated_at": datetime.now(timezone.utc),
                 }
             },

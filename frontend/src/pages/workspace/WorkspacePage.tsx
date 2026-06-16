@@ -4,7 +4,7 @@ import TopNav from '../../components/navigation/TopNav'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import { fetchSources, uploadSource, addUrlSource, deleteSource, generateArtifact, fetchArtifacts, deleteArtifact, fetchChats, fetchChat, createChat, type Source, type Artifact } from '../../api/workspace'
+import { fetchSources, uploadSource, uploadSourcesBatch, addUrlSource, deleteSource, generateArtifact, fetchArtifacts, deleteArtifact, fetchChats, fetchChat, createChat, type Source, type Artifact, type ProgressStage } from '../../api/workspace'
 import { API_BASE_URL } from '../../api/config'
 
 import {
@@ -88,8 +88,25 @@ const STUDIO_TOOLS = [
 ]
 
 const SUGGESTED = ['"Summarize ESG goals"', '"Identify key risks"', '"Compare with Q3"']
-const SOURCE_REFRESH_INTERVAL_MS = 2000
-const SOURCE_REFRESH_AFTER_UPLOAD_MS = 1500
+const SOURCE_REFRESH_FAST_MS = 500
+const SOURCE_REFRESH_SLOW_MS = 3000
+const SOURCE_REFRESH_BACKOFF_AFTER_MS = 10000
+const SOURCE_REFRESH_AFTER_UPLOAD_MS = 800
+
+const PROGRESS_STAGE_LABELS: Record<string, string> = {
+  extracting: 'Extracting text…',
+  chunking: 'Chunking…',
+  storing_chunks: 'Storing chunks…',
+  embedding: 'Generating embeddings…',
+  indexing: 'Indexing vectors…',
+  completed: 'Ready',
+  failed: 'Failed',
+  embedding_failed: 'Ready (indexing failed)',
+}
+
+function progressStageLabel(stage?: string): string {
+  return stage ? (PROGRESS_STAGE_LABELS[stage] || stage) : 'Processing…'
+}
 
 
 function TypeBadge({ type }: { type: Source['type'] }) {
@@ -126,6 +143,7 @@ function mapApiSource(source: any, workspaceId: string): Source {
   const fileSize = source.file_size ? `${(source.file_size / 1024).toFixed(0)} KB` : ''
   const createdAt = new Date(source.created_at || source.createdAt || new Date()).toLocaleDateString()
   const chunkMeta = source.chunk_count ? ` - ${source.chunk_count} chunks` : ''
+  const meta = source.metadata || {}
   return {
     id: source.id || source._id,
     type: mapSourceType(source.source_type || source.type),
@@ -135,6 +153,8 @@ function mapApiSource(source: any, workspaceId: string): Source {
     workspace_id: workspaceId,
     chunkCount: source.chunk_count || source.chunkCount || 0,
     errorMessage: source.error_message || source.errorMessage,
+    progressStage: meta.progress_stage as ProgressStage | undefined,
+    progressPct: typeof meta.progress_pct === 'number' ? meta.progress_pct : undefined,
   }
 }
 
@@ -472,10 +492,27 @@ export default function WorkspacePage() {
     }
   }, [workspaceId])
 
+  // Adaptive polling: fast right after upload, slows down over time
+  const processingStartRef = useRef<number | null>(null)
   useEffect(() => {
-    if (!workspaceId || !hasProcessingSources) return
-    const intervalId = window.setInterval(refreshSources, SOURCE_REFRESH_INTERVAL_MS)
-    return () => window.clearInterval(intervalId)
+    if (!workspaceId || !hasProcessingSources) {
+      processingStartRef.current = null
+      return
+    }
+    if (processingStartRef.current === null) {
+      processingStartRef.current = Date.now()
+    }
+    let timerId: number
+    const tick = () => {
+      refreshSources()
+      const elapsed = Date.now() - (processingStartRef.current || Date.now())
+      const delay = elapsed < SOURCE_REFRESH_BACKOFF_AFTER_MS
+        ? SOURCE_REFRESH_FAST_MS
+        : SOURCE_REFRESH_SLOW_MS
+      timerId = window.setTimeout(tick, delay)
+    }
+    timerId = window.setTimeout(tick, SOURCE_REFRESH_FAST_MS)
+    return () => window.clearTimeout(timerId)
   }, [workspaceId, hasProcessingSources, refreshSources])
 
   /* ---- Chat ---- */
@@ -699,47 +736,58 @@ export default function WorkspacePage() {
 
   /* ---- File / URL ---- */
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !workspaceId) return
-    const tempId = Date.now().toString()
-    const ext = file.name.split('.').pop()?.toUpperCase() as Source['type']
-    const type = mapSourceType(ext)
-    const newSource: Source = {
-      id: tempId,
-      type,
+    const fileList = e.target.files
+    if (!fileList || fileList.length === 0 || !workspaceId) return
+    const files = Array.from(fileList)
+
+    // Create optimistic temp sources for all files
+    const tempSources: Source[] = files.map((file, i) => ({
+      id: `temp_${Date.now()}_${i}`,
+      type: mapSourceType(file.name.split('.').pop()?.toUpperCase() || 'TXT'),
       name: file.name,
       meta: `Uploading • ${(file.size / 1024).toFixed(0)} KB`,
-      status: 'processing',
-      workspace_id: workspaceId
-    }
-    setSources((s) => [newSource, ...s])
-    addToast(`Uploading "${file.name}"...`, 'info')
+      status: 'processing' as const,
+      workspace_id: workspaceId,
+      progressStage: 'extracting' as ProgressStage,
+      progressPct: 0,
+    }))
+    setSources((s) => [...tempSources, ...s])
+    const label = files.length === 1 ? `"${files[0].name}"` : `${files.length} files`
+    addToast(`Uploading ${label}...`, 'info')
 
     try {
-      const responseSource = await uploadSource(file, workspaceId)
-      const mappedSource: Source = {
-        id: responseSource.id || responseSource._id,
-        type: mapSourceType(responseSource.source_type || responseSource.type || ext),
-        name: responseSource.original_name || responseSource.filename || responseSource.name || file.name,
-        meta: `${(file.size / 1024).toFixed(0)} KB • ${new Date().toLocaleDateString()}`,
-        status: mapSourceStatus(responseSource.status),
-        workspace_id: workspaceId,
-        chunkCount: responseSource.chunk_count || responseSource.chunkCount || 0,
-        errorMessage: responseSource.error_message || responseSource.errorMessage
+      let responseSources: any[]
+      if (files.length === 1) {
+        const single = await uploadSource(files[0], workspaceId)
+        responseSources = [single]
+      } else {
+        responseSources = await uploadSourcesBatch(files, workspaceId)
       }
-      setSources((s) => s.map((src) => src.id === tempId ? mappedSource : src))
+
+      // Replace temp sources with real ones
+      setSources((prev) => {
+        const tempIds = new Set(tempSources.map((t) => t.id))
+        const cleaned = prev.filter((s) => !tempIds.has(s.id))
+        const mapped = responseSources.map((rs: any) => mapApiSource(rs, workspaceId))
+        return [...mapped, ...cleaned]
+      })
       addNotification({
         icon: 'source',
-        title: 'Source uploaded',
-        description: `${mappedSource.name} is being processed.`,
+        title: files.length === 1 ? 'Source uploaded' : `${files.length} sources uploaded`,
+        description: `${label} queued for processing.`,
       })
-      addToast(`"${mappedSource.name}" uploaded. Processing source...`, 'info')
+      addToast(`${label} uploaded. Processing...`, 'info')
+      // Reset processing timer for fast polling
+      processingStartRef.current = Date.now()
       refreshSources()
       window.setTimeout(refreshSources, SOURCE_REFRESH_AFTER_UPLOAD_MS)
     } catch (error) {
-      setSources((s) => s.filter((src) => src.id !== tempId))
-      addToast(`Failed to upload "${file.name}"`, 'error')
+      const tempIds = new Set(tempSources.map((t) => t.id))
+      setSources((s) => s.filter((src) => !tempIds.has(src.id)))
+      addToast(`Failed to upload ${label}`, 'error')
     }
+    // Reset file input so the same file can be selected again
+    e.target.value = ''
   }
 
   const addUrl = async () => {
@@ -942,7 +990,7 @@ export default function WorkspacePage() {
                 <span className="text-[11px] font-medium text-on-surface-variant">Add URL</span>
               </button>
             </div>
-            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.txt" className="hidden" onChange={handleFileUpload} />
+            <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.txt,.csv,.xlsx,.pptx" multiple className="hidden" onChange={handleFileUpload} />
 
             {showUrlInput && (
               <div className="mt-3 flex gap-2">
@@ -974,7 +1022,7 @@ export default function WorkspacePage() {
               </div>
             )}
             {sources.map((src) => (
-              <div key={src.id} className={`bg-surface-container-lowest border border-outline-variant p-3 rounded-lg hover:shadow-sm transition-all group ${src.status === 'processing' || src.status === 'pending' ? 'opacity-70' : ''}`}>
+              <div key={src.id} className={`bg-surface-container-lowest border border-outline-variant p-3 rounded-lg hover:shadow-sm transition-all group ${src.status === 'processing' || src.status === 'pending' ? 'opacity-80' : ''}`}>
                 <div className="flex items-start justify-between mb-1.5">
                   <TypeBadge type={src.type} />
                   <div className="flex items-center gap-1">
@@ -984,11 +1032,11 @@ export default function WorkspacePage() {
                       </span>
                     ) : src.status === 'processed' ? (
                       <span className="flex items-center gap-1 text-[10px] text-green-600 font-medium">
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full" /> Processed
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full" /> {src.progressStage === 'embedding_failed' ? 'Ready (indexing failed)' : 'Processed'}
                       </span>
                     ) : (
                       <span className="flex items-center gap-1 text-[10px] text-blue-600 font-medium">
-                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" /> {src.status === 'pending' ? 'Pending' : 'Processing'}
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" /> {progressStageLabel(src.progressStage)}
                       </span>
                     )}
                     <button
@@ -1001,6 +1049,14 @@ export default function WorkspacePage() {
                 </div>
                 <p className="text-xs font-semibold text-on-surface line-clamp-1">{src.name}</p>
                 <p className="text-[11px] text-on-surface-variant mt-0.5">{src.meta}</p>
+                {(src.status === 'processing' || src.status === 'pending') && typeof src.progressPct === 'number' && (
+                  <div className="mt-1.5 w-full bg-surface-container rounded-full h-1 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${Math.max(2, src.progressPct)}%` }}
+                    />
+                  </div>
+                )}
                 {src.status === 'failed' && src.errorMessage && (
                   <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{src.errorMessage}</p>
                 )}

@@ -1,5 +1,7 @@
 import { api } from './client'
 
+export type ProgressStage = 'extracting' | 'chunking' | 'storing_chunks' | 'embedding' | 'indexing' | 'completed' | 'failed' | 'embedding_failed'
+
 export interface Source {
   id: string
   type: 'PDF' | 'WEB' | 'DOCX' | 'TXT' | 'CSV' | 'XLSX' | 'PPTX'
@@ -10,6 +12,8 @@ export interface Source {
   workspace_id: string
   chunkCount?: number
   errorMessage?: string
+  progressStage?: ProgressStage
+  progressPct?: number
 }
 
 export interface Artifact {
@@ -37,6 +41,16 @@ export const uploadSource = async (file: File, workspaceId: string) => {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
   return data
+}
+
+export const uploadSourcesBatch = async (files: File[], workspaceId: string) => {
+  const formData = new FormData()
+  files.forEach((file) => formData.append('files', file))
+
+  const { data } = await api.post(`/sources/upload/batch?workspace_id=${workspaceId}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data.sources
 }
 
 export const addUrlSource = async (url: string, workspaceId: string) => {

@@ -134,9 +134,15 @@ class RAGService:
             embeddings.extend(batch_embeddings)
         return embeddings
 
-    async def index_chunks(self, workspace_id: str, chunks: List[Dict[str, Any]]) -> int:
+    async def index_chunks(
+        self,
+        workspace_id: str,
+        chunks: List[Dict[str, Any]],
+        progress_callback=None,
+    ) -> int:
         if not chunks:
             return 0
+
         chroma = await self._get_chroma()
         collection = await chroma.get_or_create_collection(
             name=self.collection_name(workspace_id),
@@ -146,24 +152,52 @@ class RAGService:
                 "embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
             },
         )
-        for batch in self._batched(chunks, settings.CHROMA_ADD_BATCH_SIZE):
-            texts = [c["content"] for c in batch]
-            embeddings = await self.embed_texts(texts)
-            ids = [c["chunk_id"] for c in batch]
+
+        # --- Phase 1: compute ALL embeddings in one batched call ---
+        all_texts = [c["content"] for c in chunks]
+        if progress_callback:
+            await progress_callback("embedding", 40)
+        all_embeddings = await self.embed_texts(all_texts)
+        if progress_callback:
+            await progress_callback("indexing", 70)
+
+        # --- Phase 2: upsert into Chroma in parallel batches ---
+        chroma_batches = list(self._batched(
+            list(zip(chunks, all_embeddings)),
+            settings.CHROMA_ADD_BATCH_SIZE,
+        ))
+        upsert_semaphore = asyncio.Semaphore(
+            max(1, settings.CHROMA_UPSERT_CONCURRENCY)
+        )
+        total_batches = len(chroma_batches)
+
+        async def _upsert_batch(batch_idx: int, batch):
+            batch_chunks, batch_embeddings = zip(*batch)
+            ids = [c["chunk_id"] for c in batch_chunks]
+            texts = [c["content"] for c in batch_chunks]
             metadatas = [
                 {
                     **c["metadata"],
                     "embedding_model": settings.OPENAI_EMBEDDING_MODEL,
                     "embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
                 }
-                for c in batch
+                for c in batch_chunks
             ]
-            await collection.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                documents=texts,
-                metadatas=metadatas,
-            )
+            async with upsert_semaphore:
+                await collection.upsert(
+                    ids=ids,
+                    embeddings=list(batch_embeddings),
+                    documents=texts,
+                    metadatas=metadatas,
+                )
+            if progress_callback and total_batches > 0:
+                pct = 70 + int(30 * (batch_idx + 1) / total_batches)
+                await progress_callback("indexing", min(pct, 99))
+
+        await asyncio.gather(
+            *(_upsert_batch(i, batch) for i, batch in enumerate(chroma_batches))
+        )
+
         logger.info(f"Indexed {len(chunks)} chunks in workspace {workspace_id}")
         return len(chunks)
 

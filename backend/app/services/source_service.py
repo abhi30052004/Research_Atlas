@@ -25,15 +25,19 @@ class SourceService:
             logger.info("Queued source %s for Celery processing", source_id)
         except Exception as exc:
             logger.warning(
-                "Celery enqueue failed for source %s; processing in API background task: %s",
+                "Celery enqueue failed for source %s; processing via background task: %s",
                 source_id,
                 exc,
             )
             from app.workers.source_tasks import _process_source
-            try:
-                await _process_source(source_id)
-            except Exception:
-                logger.exception("API fallback processing failed for source %s", source_id)
+
+            async def _run_fallback():
+                try:
+                    await _process_source(source_id)
+                except Exception:
+                    logger.exception("Background fallback processing failed for source %s", source_id)
+
+            asyncio.create_task(_run_fallback())
 
     def _schedule_processing(
         self,
@@ -135,6 +139,66 @@ class SourceService:
         self._schedule_processing(source_id, background_tasks)
         doc["id"] = source_id
         return doc
+
+    async def upload_files_batch(
+        self,
+        files: list,
+        workspace_id: str,
+        user_id: str,
+        background_tasks: Optional[BackgroundTasks] = None,
+    ) -> list:
+        """Upload and enqueue multiple files concurrently."""
+        db = get_db()
+        ws = await db.workspaces.find_one({"_id": workspace_id, "user_id": user_id})
+        if not ws:
+            raise HTTPException(status_code=404, detail="Workspace not found")
+
+        source_type_map = {
+            "pdf": SourceType.PDF, "docx": SourceType.DOCX, "txt": SourceType.TXT,
+            "csv": SourceType.CSV, "xlsx": SourceType.XLSX, "pptx": SourceType.PPTX,
+        }
+
+        # Save all files to disk concurrently
+        file_infos = await asyncio.gather(
+            *(save_upload_file(f, workspace_id) for f in files)
+        )
+
+        docs = []
+        now = datetime.now(timezone.utc)
+        for file_info in file_infos:
+            ext = file_info["extension"]
+            source_type = source_type_map.get(ext, SourceType.TXT)
+            source_id = str(ObjectId())
+            doc = {
+                "_id": source_id,
+                "workspace_id": workspace_id,
+                "user_id": user_id,
+                "filename": file_info["filename"],
+                "original_name": file_info["original_name"],
+                "source_type": source_type.value,
+                "file_path": file_info["file_path"],
+                "file_size": file_info["file_size"],
+                "mime_type": file_info["mime_type"],
+                "status": ProcessingStatus.PENDING.value,
+                "chunk_count": 0,
+                "chroma_collection": f"workspace_{workspace_id}",
+                "metadata": {},
+                "created_at": now,
+                "updated_at": now,
+            }
+            docs.append(doc)
+
+        if docs:
+            await db.sources.insert_many(docs, ordered=False)
+            await db.workspaces.update_one(
+                {"_id": workspace_id},
+                {"$inc": {"source_count": len(docs)}, "$set": {"updated_at": now}},
+            )
+            for doc in docs:
+                self._schedule_processing(doc["_id"], background_tasks)
+                doc["id"] = doc["_id"]
+
+        return docs
 
     async def add_url(
         self,
