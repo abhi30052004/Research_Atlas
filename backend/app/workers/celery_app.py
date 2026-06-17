@@ -16,8 +16,13 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_acks_late=True,
+    task_queue_max_priority=10,
+    task_default_priority=5,
     worker_prefetch_multiplier=1,
     task_always_eager=settings.CELERY_TASK_ALWAYS_EAGER,
+    broker_transport_options={
+        "queue_order_strategy": "priority",
+    },
     task_routes={
         "app.workers.source_tasks.process_source_task": {"queue": "sources"},
         "app.workers.source_tasks.index_source_task": {"queue": "sources"},

@@ -56,6 +56,19 @@ def _chunk_from_document(chunk: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+async def _update_progress(db, source_id: str, stage: str, pct: int) -> None:
+    await db.sources.update_one(
+        {"_id": source_id},
+        {
+            "$set": {
+                "metadata.progress_stage": stage,
+                "metadata.progress_pct": pct,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+
 async def _iter_chunk_batches_from_db(db, source_id: str, batch_size: int):
     batch_size = max(1, batch_size)
     batch = []
@@ -167,7 +180,12 @@ async def _schedule_index_source(
         return
 
     try:
-        await asyncio.to_thread(index_source_task.delay, source_id)
+        await asyncio.to_thread(
+            index_source_task.apply_async,
+            args=[source_id],
+            queue="sources",
+            priority=settings.SOURCE_INDEX_TASK_PRIORITY,
+        )
         logger.info("Queued source %s for embedding index", source_id)
     except Exception as exc:
         logger.warning("Embedding enqueue failed for source %s: %s", source_id, exc)
@@ -234,9 +252,9 @@ async def _process_source(
 
         if source_type == SourceType.PDF.value:
             pages, page_count = await extract_pages_from_pdf(source["file_path"])
-            text = "\n".join(pages)
             await _update_progress(db, source_id, "extracting", 15)
             chunks = chunk_text_with_pages(pages, source_id, source["filename"])
+            word_count = sum(len(page.split()) for page in pages)
         elif source_type == SourceType.DOCX.value:
             text = await extract_text_from_docx(source["file_path"])
         elif source_type == SourceType.TXT.value:
@@ -254,7 +272,8 @@ async def _process_source(
         logger.info("Source %s extraction took %.2fs", source_id, t_extract - t0)
 
         # --- Phase 2: Chunk ---
-        word_count = len(text.split()) if text else 0
+        if source_type != SourceType.PDF.value:
+            word_count = len(text.split()) if text else 0
         await _update_progress(db, source_id, "chunking", 18)
         if not chunks:
             chunks = chunk_text(text, source_id, source["filename"])

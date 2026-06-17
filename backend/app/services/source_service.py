@@ -23,7 +23,12 @@ class SourceService:
 
     async def _enqueue_processing(self, source_id: str) -> None:
         try:
-            await asyncio.to_thread(process_source_task.delay, source_id)
+            await asyncio.to_thread(
+                process_source_task.apply_async,
+                args=[source_id],
+                queue="sources",
+                priority=settings.SOURCE_PROCESSING_TASK_PRIORITY,
+            )
             logger.info("Queued source %s for Celery processing", source_id)
         except Exception as exc:
             logger.warning(
