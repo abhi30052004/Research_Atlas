@@ -161,6 +161,7 @@ class ChatService:
                 "done",
                 citations=citations,
                 followups=followups,
+                message_id=assistant_msg_id,
                 done=True,
             )
         except Exception as e:

@@ -47,6 +47,7 @@ async def run_agent(
         "user_id": user_id,
         "model": model,
         "source_ids": [],
+        "retrieval_top_k": 0,
         "retrieved_docs": [],
         "ranked_docs": [],
         "response": "",

@@ -716,7 +716,11 @@ export default function WorkspacePage() {
                   aiContent += parsed.content
                   setMessages((m) => m.map(msg => msg.id === aiMsgId ? { ...msg, content: aiContent } : msg))
                 } else if (parsed?.type === 'done') {
-                  setMessages((m) => m.map(msg => msg.id === aiMsgId ? { ...msg, citations: parsed.citations || [] } : msg))
+                  setMessages((m) => m.map(msg => msg.id === aiMsgId ? {
+                    ...msg,
+                    id: parsed.message_id || msg.id,
+                    citations: parsed.citations || [],
+                  } : msg))
                 } else if (parsed?.type === 'error') {
                   addToast(parsed.content || 'Failed to send message', 'error')
                 }
@@ -772,7 +776,6 @@ export default function WorkspacePage() {
 
     const idx = messages.findIndex((m) => m.id === msgId)
     if (idx < 0) return
-    setMessages((prev) => prev.filter((m) => m.id !== msgId))
     setIsTyping(true)
 
     // Record AI call
@@ -795,13 +798,14 @@ export default function WorkspacePage() {
 
       const data = await response.json()
       const regenerated = data.message || data
-      setMessages((prev) => [
-        ...prev,
-        {
-          ...regenerated,
-          role: regenerated.role === 'assistant' ? 'ai' : regenerated.role,
-        },
-      ])
+      setMessages((prev) => prev.map((msg) => (
+        msg.id === msgId
+          ? {
+            ...regenerated,
+            role: regenerated.role === 'assistant' ? 'ai' : regenerated.role,
+          }
+          : msg
+      )))
       setIsTyping(false)
     } catch (err) {
       setIsTyping(false)

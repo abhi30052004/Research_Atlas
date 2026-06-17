@@ -21,9 +21,29 @@ def _get_groq() -> AsyncGroq:
     return AsyncGroq(api_key=settings.GROQ_API_KEY)
 
 
+def _chat_retrieval_top_k(query: str) -> int:
+    broad_terms = (
+        "all",
+        "complete",
+        "comprehensive",
+        "each",
+        "every",
+        "full",
+        "list",
+        "project",
+        "projects",
+        "section",
+    )
+    normalized = query.lower()
+    if any(term in normalized for term in broad_terms):
+        return max(settings.CHAT_RETRIEVAL_TOP_K, 30)
+    return settings.CHAT_RETRIEVAL_TOP_K
+
+
 async def analyze_query(state: AgentState) -> AgentState:
     logger.info(f"Analyzing query: {state['query'][:80]}")
     state["source_ids"] = []
+    state["retrieval_top_k"] = _chat_retrieval_top_k(state["query"])
     state["retrieved_docs"] = []
     state["ranked_docs"] = []
     state["response"] = ""
@@ -56,7 +76,7 @@ async def retrieve_documents(state: AgentState) -> AgentState:
             logger.info("No completed sources with chunks found for chat retrieval")
             return state
 
-        top_k = settings.CHAT_RETRIEVAL_TOP_K
+        top_k = state.get("retrieval_top_k") or settings.CHAT_RETRIEVAL_TOP_K
         docs = await rag_service.retrieve(
             workspace_id=state["workspace_id"],
             query=state["query"],
@@ -74,7 +94,7 @@ async def retrieve_documents(state: AgentState) -> AgentState:
 async def rank_context(state: AgentState) -> AgentState:
     docs = state["retrieved_docs"]
     ranked = sorted(docs, key=lambda x: x.get("relevance_score", 0), reverse=True)
-    state["ranked_docs"] = ranked[:settings.CHAT_RETRIEVAL_TOP_K]
+    state["ranked_docs"] = ranked[:state.get("retrieval_top_k", settings.CHAT_RETRIEVAL_TOP_K)]
     return state
 
 
@@ -110,6 +130,8 @@ async def generate_answer(state: AgentState) -> AgentState:
             "- Every sourced sentence or paragraph must include at least one citation in the exact format [Source N], "
             "placed immediately after the statement it supports, not bundled at the end of a long paragraph.\n"
             "- If a claim is supported by more than one source, cite all of them.\n"
+            "- For list, all, every, each, or project/item enumeration questions, include every supported item "
+            "present in the source context instead of stopping after the first relevant item.\n"
             "- Never invent or guess a citation number, and never attach [Source N] to a general-knowledge statement.\n\n"
             "2. Synthesis in Your Own Words\n"
             "- Rephrase and synthesize source content in your own words; do not reproduce passages verbatim unless "

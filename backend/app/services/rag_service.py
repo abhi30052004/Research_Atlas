@@ -292,6 +292,75 @@ class RAGService:
         }
         return [term for term in terms if term not in stopwords][:12]
 
+    def _chunk_index(self, doc: Dict[str, Any]) -> Optional[int]:
+        metadata = doc.get("metadata", {})
+        value = metadata.get("chunk_index")
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                pass
+
+        chunk_id = str(doc.get("chunk_id") or "")
+        match = re.search(r"_chunk_(\d+)$", chunk_id)
+        return int(match.group(1)) if match else None
+
+    def _mongo_chunk_doc(self, chunk: Dict[str, Any], relevance_score: float) -> Dict[str, Any]:
+        metadata = chunk.get("metadata", {})
+        return {
+            "content": chunk.get("content", ""),
+            "metadata": metadata,
+            "relevance_score": relevance_score,
+            "source_id": chunk.get("source_id"),
+            "filename": chunk.get("filename") or metadata.get("filename"),
+            "page_number": chunk.get("page_number") or metadata.get("page_number"),
+            "chunk_id": chunk.get("chunk_id") or str(chunk.get("_id")),
+        }
+
+    async def _expand_neighbor_chunks(
+        self,
+        workspace_id: str,
+        docs: List[Dict[str, Any]],
+        per_side: int = 2,
+    ) -> List[Dict[str, Any]]:
+        wanted: Dict[str, set] = {}
+        seed_scores: Dict[tuple, float] = {}
+
+        for doc in docs:
+            source_id = doc.get("source_id")
+            chunk_index = self._chunk_index(doc)
+            if not source_id or chunk_index is None:
+                continue
+
+            indexes = wanted.setdefault(source_id, set())
+            for index in range(max(0, chunk_index - per_side), chunk_index + per_side + 1):
+                indexes.add(index)
+                distance = abs(index - chunk_index)
+                score = max(0.35, doc.get("relevance_score", 0.4) - (distance * 0.03))
+                key = (source_id, index)
+                seed_scores[key] = max(seed_scores.get(key, 0), score)
+
+        if not wanted:
+            return []
+
+        try:
+            db = get_db()
+            expanded = []
+            for source_id, indexes in wanted.items():
+                cursor = db.source_chunks.find({
+                    "workspace_id": workspace_id,
+                    "source_id": source_id,
+                    "chunk_index": {"$in": sorted(indexes)},
+                })
+                async for chunk in cursor:
+                    chunk_index = int(chunk.get("chunk_index", 0))
+                    score = seed_scores.get((source_id, chunk_index), 0.35)
+                    expanded.append(self._mongo_chunk_doc(chunk, score))
+            return expanded
+        except Exception as e:
+            logger.debug(f"Neighbor chunk expansion failed for workspace {workspace_id}: {e}")
+            return []
+
     async def _retrieve_from_mongo_chunks(
         self,
         workspace_id: str,
@@ -318,16 +387,8 @@ class RAGService:
                 score = sum(lowered.count(term) for term in terms)
                 if terms and score == 0:
                     continue
-                metadata = chunk.get("metadata", {})
-                docs.append({
-                    "content": content,
-                    "metadata": metadata,
-                    "relevance_score": min(0.95, 0.45 + (score * 0.05)) if terms else 0.45,
-                    "source_id": chunk.get("source_id"),
-                    "filename": chunk.get("filename") or metadata.get("filename"),
-                    "page_number": chunk.get("page_number") or metadata.get("page_number"),
-                    "chunk_id": chunk.get("chunk_id") or str(chunk.get("_id")),
-                })
+                relevance_score = min(0.95, 0.45 + (score * 0.05)) if terms else 0.45
+                docs.append(self._mongo_chunk_doc(chunk, relevance_score))
 
             if not docs:
                 fallback_cursor = (
@@ -336,16 +397,7 @@ class RAGService:
                     .limit(top_k)
                 )
                 async for chunk in fallback_cursor:
-                    metadata = chunk.get("metadata", {})
-                    docs.append({
-                        "content": chunk.get("content", ""),
-                        "metadata": metadata,
-                        "relevance_score": 0.4,
-                        "source_id": chunk.get("source_id"),
-                        "filename": chunk.get("filename") or metadata.get("filename"),
-                        "page_number": chunk.get("page_number") or metadata.get("page_number"),
-                        "chunk_id": chunk.get("chunk_id") or str(chunk.get("_id")),
-                    })
+                    docs.append(self._mongo_chunk_doc(chunk, 0.4))
 
             return sorted(docs, key=lambda x: x["relevance_score"], reverse=True)[:top_k]
         except Exception as e:
@@ -419,6 +471,8 @@ class RAGService:
                     top_k,
                     source_ids,
                 ))
+            if docs:
+                docs.extend(await self._expand_neighbor_chunks(workspace_id, docs))
 
             deduped = {}
             for doc in docs:
