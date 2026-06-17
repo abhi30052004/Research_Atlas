@@ -58,7 +58,17 @@ interface Message {
   id: string
   role: 'user' | 'ai'
   content: string
-  citations?: number[]
+  citations?: Citation[]
+}
+
+interface Citation {
+  source_name?: string
+  sourceName?: string
+  filename?: string
+  source_id?: string
+  sourceId?: string
+  page_number?: number
+  page?: number
 }
 
 type StudioTool = typeof STUDIO_TOOLS[number]
@@ -163,19 +173,36 @@ function getTool(value: string): StudioTool | undefined {
   return STUDIO_TOOLS.find(t => t.label === value || t.type === value)
 }
 
-function convertSourceCitations(html: string): string {
+function sourceCitationLabel(num: string, name: string | undefined, citations: Citation[] = [], sources: Source[] = []) {
+  const explicitName = name?.trim()
+  if (explicitName) return explicitName
+
+  const index = Number(num) - 1
+  const citation = citations[index]
+  const citationName = citation?.source_name || citation?.sourceName || citation?.filename
+  if (citationName) {
+    const page = citation.page_number || citation.page
+    return page ? `${citationName} p.${page}` : citationName
+  }
+
+  const sourceId = citation?.source_id || citation?.sourceId
+  const matchedSource = sourceId ? sources.find((source) => source.id === sourceId) : sources[index]
+  return matchedSource?.name || `Source ${num}`
+}
+
+function convertSourceCitations(html: string, citations: Citation[] = [], sources: Source[] = []): string {
   // Convert [Source N] and [Source: filename] to styled pills
   return html
     .replace(/\[Source\s+(\d+)(?::\s*([^\]]+))?\]/gi, (_match, num, name) => {
-      const label = name ? name.trim() : `Source ${num}`
-      return `<span class="source-cite">${label}</span>`
+      const label = sourceCitationLabel(num, name, citations, sources)
+      return `<span class="source-cite">${escapeHtml(label)}</span>`
     })
     .replace(/\[Source:\s*([^\]]+)\]/gi, (_match, name) => {
-      return `<span class="source-cite">${name.trim()}</span>`
+      return `<span class="source-cite">${escapeHtml(name.trim())}</span>`
     })
 }
 
-function renderMessageContent(content: string, isUser?: boolean) {
+function renderMessageContent(content: string, isUser?: boolean, citations: Citation[] = [], sources: Source[] = []) {
   if (isUser) {
     return <div className="whitespace-pre-wrap">{content}</div>
   }
@@ -192,7 +219,7 @@ function renderMessageContent(content: string, isUser?: boolean) {
           p: ({children, ...props}) => {
             const text = String(children || '')
             if (text.includes('[Source')) {
-              return <p {...props} dangerouslySetInnerHTML={{ __html: convertSourceCitations(text) }} />
+              return <p {...props} dangerouslySetInnerHTML={{ __html: convertSourceCitations(text, citations, sources) }} />
             }
             return <p {...props}>{children}</p>
           },
@@ -688,6 +715,8 @@ export default function WorkspacePage() {
                 if (parsed?.type === 'token' && parsed.content) {
                   aiContent += parsed.content
                   setMessages((m) => m.map(msg => msg.id === aiMsgId ? { ...msg, content: aiContent } : msg))
+                } else if (parsed?.type === 'done') {
+                  setMessages((m) => m.map(msg => msg.id === aiMsgId ? { ...msg, citations: parsed.citations || [] } : msg))
                 } else if (parsed?.type === 'error') {
                   addToast(parsed.content || 'Failed to send message', 'error')
                 }
@@ -1259,7 +1288,7 @@ export default function WorkspacePage() {
                     </div>
                     <div className="space-y-2">
                       <div className={`p-4 rounded-xl text-sm leading-relaxed ${msg.role === 'ai' ? 'bg-surface-container-low border border-outline-variant rounded-tl-none' : 'bg-secondary-container text-on-secondary-container rounded-tr-none'}`}>
-                        {renderMessageContent(msg.content, msg.role === 'user')}
+                        {renderMessageContent(msg.content, msg.role === 'user', msg.citations || [], sources)}
                       </div>
                       {msg.role === 'ai' && (
                         <div className="flex gap-1.5">
