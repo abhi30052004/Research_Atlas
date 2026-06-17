@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 2200
     CHUNK_OVERLAP: int = 100
     RETRIEVAL_TOP_K: int = 5
+    CHAT_RETRIEVAL_TOP_K: int = 18
     RETRIEVAL_MIN_RELEVANCE: float = 0.25
     ARTIFACT_RETRIEVAL_TOP_K: int = 18
     EMBEDDING_BATCH_SIZE: int = 256

@@ -46,6 +46,7 @@ async def run_agent(
         "workspace_id": workspace_id,
         "user_id": user_id,
         "model": model,
+        "source_ids": [],
         "retrieved_docs": [],
         "ranked_docs": [],
         "response": "",

@@ -7,6 +7,7 @@ class AgentState(TypedDict):
     workspace_id: str
     user_id: str
     model: str
+    source_ids: List[str]
     retrieved_docs: List[dict]
     ranked_docs: List[dict]
     response: str
