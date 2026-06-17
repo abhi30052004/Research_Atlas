@@ -71,10 +71,12 @@ class RAGService:
         if not chunks:
             return 0
 
-        now_docs = []
+        batch = []
+        total = 0
+        insert_batch_size = max(1, settings.SOURCE_CHUNK_INSERT_BATCH_SIZE)
         for chunk in chunks:
             metadata = chunk.get("metadata", {})
-            now_docs.append({
+            batch.append({
                 "_id": chunk["chunk_id"],
                 "workspace_id": workspace_id,
                 "source_id": source_id,
@@ -85,8 +87,15 @@ class RAGService:
                 "chunk_index": metadata.get("chunk_index", 0),
                 "metadata": metadata,
             })
-        await db.source_chunks.insert_many(now_docs, ordered=False)
-        return len(now_docs)
+            if len(batch) >= insert_batch_size:
+                await db.source_chunks.insert_many(batch, ordered=False)
+                total += len(batch)
+                batch = []
+
+        if batch:
+            await db.source_chunks.insert_many(batch, ordered=False)
+            total += len(batch)
+        return total
 
     def _embedding_dimensions_for_model(
         self,
@@ -134,11 +143,32 @@ class RAGService:
             embeddings.extend(batch_embeddings)
         return embeddings
 
-    async def index_chunks(self, workspace_id: str, chunks: List[Dict[str, Any]]) -> int:
-        if not chunks:
-            return 0
+    async def embed_chunk_texts(self, chunks: List[Dict[str, Any]]) -> List[List[float]]:
+        texts = [chunk["content"] for chunk in chunks]
+        if not texts:
+            return []
+
+        unique_texts = []
+        text_indexes = []
+        unique_index_by_text = {}
+        for text in texts:
+            unique_index = unique_index_by_text.get(text)
+            if unique_index is None:
+                unique_index = len(unique_texts)
+                unique_index_by_text[text] = unique_index
+                unique_texts.append(text)
+            text_indexes.append(unique_index)
+
+        unique_embeddings = await self.embed_texts(unique_texts)
+        if len(unique_embeddings) != len(unique_texts):
+            raise RuntimeError(
+                f"Embedding provider returned {len(unique_embeddings)} embeddings for {len(unique_texts)} inputs"
+            )
+        return [unique_embeddings[index] for index in text_indexes]
+
+    async def _get_index_collection(self, workspace_id: str):
         chroma = await self._get_chroma()
-        collection = await chroma.get_or_create_collection(
+        return await chroma.get_or_create_collection(
             name=self.collection_name(workspace_id),
             metadata={
                 "hnsw:space": "cosine",
@@ -146,26 +176,71 @@ class RAGService:
                 "embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
             },
         )
-        for batch in self._batched(chunks, settings.CHROMA_ADD_BATCH_SIZE):
-            texts = [c["content"] for c in batch]
-            embeddings = await self.embed_texts(texts)
-            ids = [c["chunk_id"] for c in batch]
-            metadatas = [
-                {
-                    **c["metadata"],
-                    "embedding_model": settings.OPENAI_EMBEDDING_MODEL,
-                    "embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
-                }
-                for c in batch
-            ]
-            await collection.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                documents=texts,
-                metadatas=metadatas,
-            )
-        logger.info(f"Indexed {len(chunks)} chunks in workspace {workspace_id}")
-        return len(chunks)
+
+    async def _index_chunk_batch(self, collection, batch: List[Dict[str, Any]]) -> int:
+        embeddings = await self.embed_chunk_texts(batch)
+        texts = [c["content"] for c in batch]
+        ids = [c["chunk_id"] for c in batch]
+        metadatas = [
+            {
+                **c["metadata"],
+                "chunk_id": c["chunk_id"],
+                "embedding_model": settings.OPENAI_EMBEDDING_MODEL,
+                "embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
+            }
+            for c in batch
+        ]
+        await collection.upsert(
+            ids=ids,
+            embeddings=embeddings,
+            documents=texts,
+            metadatas=metadatas,
+        )
+        return len(batch)
+
+    async def index_chunk_batches(self, workspace_id: str, chunk_batches) -> int:
+        collection = await self._get_index_collection(workspace_id)
+        concurrency = max(1, settings.SOURCE_INDEX_BATCH_CONCURRENCY)
+        semaphore = asyncio.Semaphore(concurrency)
+        pending = set()
+        total = 0
+
+        async def index_with_limit(batch: List[Dict[str, Any]]) -> int:
+            async with semaphore:
+                return await self._index_chunk_batch(collection, batch)
+
+        try:
+            async for batch in chunk_batches:
+                if not batch:
+                    continue
+                pending.add(asyncio.create_task(index_with_limit(batch)))
+                if len(pending) >= concurrency:
+                    done, pending = await asyncio.wait(
+                        pending,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in done:
+                        total += task.result()
+
+            if pending:
+                total += sum(await asyncio.gather(*pending))
+        except Exception:
+            for task in pending:
+                task.cancel()
+            raise
+
+        logger.info(f"Indexed {total} chunks in workspace {workspace_id}")
+        return total
+
+    async def index_chunks(self, workspace_id: str, chunks: List[Dict[str, Any]]) -> int:
+        if not chunks:
+            return 0
+
+        async def chunk_batches():
+            for batch in self._batched(chunks, settings.CHROMA_ADD_BATCH_SIZE):
+                yield batch
+
+        return await self.index_chunk_batches(workspace_id, chunk_batches())
 
     async def _retrieve_from_collection(
         self,

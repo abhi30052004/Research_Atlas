@@ -48,7 +48,7 @@ async def test_rag_service_index_chunks():
     ]
     with patch.object(rag_service, "_get_chroma") as mock_chroma:
         mock_collection = AsyncMock()
-        mock_collection.add = AsyncMock()
+        mock_collection.upsert = AsyncMock()
         mock_client = AsyncMock()
         mock_client.get_or_create_collection = AsyncMock(return_value=mock_collection)
         mock_chroma.return_value = mock_client
@@ -59,11 +59,49 @@ async def test_rag_service_index_chunks():
 
 
 @pytest.mark.asyncio
+async def test_rag_service_indexes_source_in_chroma_batches():
+    from app.core.config import settings
+    from app.services.rag_service import rag_service
+
+    chunks = [
+        {
+            "chunk_id": f"src_chunk_{index}",
+            "content": f"Sample content {index}",
+            "metadata": {"source_id": "src", "filename": "test.pdf", "chunk_index": index},
+        }
+        for index in range(5)
+    ]
+
+    async def fake_embed(texts):
+        return [[float(len(text))] for text in texts]
+
+    with patch.object(rag_service, "_get_chroma") as mock_chroma:
+        mock_collection = AsyncMock()
+        mock_collection.upsert = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_or_create_collection = AsyncMock(return_value=mock_collection)
+        mock_chroma.return_value = mock_client
+
+        with patch.object(settings, "CHROMA_ADD_BATCH_SIZE", 2):
+            with patch.object(settings, "SOURCE_INDEX_BATCH_CONCURRENCY", 1):
+                with patch.object(rag_service, "embed_texts", AsyncMock(side_effect=fake_embed)) as mock_embed:
+                    count = await rag_service.index_chunks("workspace_123", chunks)
+
+    assert count == 5
+    assert [call.args[0] for call in mock_embed.await_args_list] == [
+        [chunk["content"] for chunk in chunks[:2]],
+        [chunk["content"] for chunk in chunks[2:4]],
+        [chunks[4]["content"]],
+    ]
+    assert mock_collection.upsert.await_count == 3
+
+
+@pytest.mark.asyncio
 async def test_embed_texts_batches_requests():
     from app.core.config import settings
     from app.services.rag_service import rag_service
 
-    async def fake_create(model, input):
+    async def fake_create(model, input, **kwargs):
         return SimpleNamespace(
             data=[
                 SimpleNamespace(index=index, embedding=[float(len(text))])

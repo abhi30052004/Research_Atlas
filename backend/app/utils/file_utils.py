@@ -19,11 +19,15 @@ MIME_TO_EXT = {
 
 
 async def save_upload_file(upload_file: UploadFile, workspace_id: str) -> dict:
-    content = await upload_file.read()
-    if len(content) > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"File too large. Max {settings.MAX_UPLOAD_SIZE_MB}MB")
+    max_size = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    sniff_size = 8192
+    chunk_size = 1024 * 1024
 
-    mime = magic.from_buffer(content, mime=True)
+    first_chunk = await upload_file.read(sniff_size)
+    if not first_chunk:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    mime = magic.from_buffer(first_chunk, mime=True)
     ext = MIME_TO_EXT.get(mime)
     if not ext:
         original_ext = Path(upload_file.filename or "").suffix.lstrip(".").lower()
@@ -32,21 +36,49 @@ async def save_upload_file(upload_file: UploadFile, workspace_id: str) -> dict:
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {mime}")
 
-    file_hash = hashlib.sha256(content).hexdigest()[:16]
-    unique_name = f"{uuid.uuid4().hex}_{file_hash}.{ext}"
-
     workspace_dir = Path(settings.UPLOAD_DIR) / workspace_id
     workspace_dir.mkdir(parents=True, exist_ok=True)
-    file_path = workspace_dir / unique_name
+    temp_path = workspace_dir / f"{uuid.uuid4().hex}.uploading"
 
-    async with aiofiles.open(str(file_path), "wb") as f:
-        await f.write(content)
+    digest = hashlib.sha256()
+    total_size = 0
+    try:
+        async with aiofiles.open(str(temp_path), "wb") as f:
+            digest.update(first_chunk)
+            total_size += len(first_chunk)
+            if total_size > max_size:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large. Max {settings.MAX_UPLOAD_SIZE_MB}MB",
+                )
+            await f.write(first_chunk)
+
+            while True:
+                chunk = await upload_file.read(chunk_size)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                total_size += len(chunk)
+                if total_size > max_size:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large. Max {settings.MAX_UPLOAD_SIZE_MB}MB",
+                    )
+                await f.write(chunk)
+    except Exception:
+        delete_file(str(temp_path))
+        raise
+
+    file_hash = digest.hexdigest()[:16]
+    unique_name = f"{uuid.uuid4().hex}_{file_hash}.{ext}"
+    file_path = workspace_dir / unique_name
+    os.replace(temp_path, file_path)
 
     return {
         "file_path": str(file_path),
         "filename": unique_name,
         "original_name": upload_file.filename,
-        "file_size": len(content),
+        "file_size": total_size,
         "mime_type": mime,
         "extension": ext,
     }

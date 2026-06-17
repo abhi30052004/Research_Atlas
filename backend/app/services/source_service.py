@@ -15,25 +15,25 @@ logger = logging.getLogger(__name__)
 
 
 class SourceService:
+    def _log_processing_result(self, source_id: str, task: asyncio.Task) -> None:
+        try:
+            task.result()
+        except Exception:
+            logger.exception("Detached API source processing failed for source %s", source_id)
+
     async def _enqueue_processing(self, source_id: str) -> None:
         try:
-            from app.core.redis import redis_client
-
-            if redis_client is None:
-                raise RuntimeError("Redis/Celery broker is not connected")
             await asyncio.to_thread(process_source_task.delay, source_id)
             logger.info("Queued source %s for Celery processing", source_id)
         except Exception as exc:
             logger.warning(
-                "Celery enqueue failed for source %s; processing in API background task: %s",
+                "Celery enqueue failed for source %s; detaching API processing fallback: %s",
                 source_id,
                 exc,
             )
             from app.workers.source_tasks import _process_source
-            try:
-                await _process_source(source_id)
-            except Exception:
-                logger.exception("API fallback processing failed for source %s", source_id)
+            task = asyncio.create_task(_process_source(source_id, enqueue_embedding=False))
+            task.add_done_callback(lambda done: self._log_processing_result(source_id, done))
 
     def _schedule_processing(
         self,

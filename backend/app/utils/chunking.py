@@ -1,6 +1,9 @@
 from typing import List, Dict, Any
 from bisect import bisect_right
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from app.core.config import settings
 

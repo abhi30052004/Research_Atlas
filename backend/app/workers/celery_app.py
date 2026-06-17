@@ -20,5 +20,6 @@ celery_app.conf.update(
     task_always_eager=settings.CELERY_TASK_ALWAYS_EAGER,
     task_routes={
         "app.workers.source_tasks.process_source_task": {"queue": "sources"},
+        "app.workers.source_tasks.index_source_task": {"queue": "sources"},
     },
 )
