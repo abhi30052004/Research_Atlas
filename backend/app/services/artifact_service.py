@@ -28,6 +28,17 @@ JSON_ARTIFACT_TYPES = {
     ArtifactType.QUIZ,
 }
 
+MARKDOWN_ARTIFACT_FORMAT_RULES = """
+Formatting rules for the final artifact:
+- Use Markdown section headings such as ## Overview and ## Key Findings.
+- Do not write section headings as numbered lines like "1. **Overview**".
+- Keep headings separate from body text.
+- Put key points under headings as unordered bullet lists using "- ".
+- Use numbered lists only for true step-by-step procedures, ranked sequences, or timelines.
+- Do not nest numbered lists under numbered headings.
+- Keep bullets short, parallel, and easy to scan.
+"""
+
 ARTIFACT_PROMPTS = {
 
     ArtifactType.SUMMARY: """
@@ -491,6 +502,8 @@ class ArtifactService:
             artifact_type,
             "Generate well-structured content based on the provided sources. Cite sources inline using [Source: <filename>].",
         )
+        if artifact_type not in JSON_ARTIFACT_TYPES and artifact_type != ArtifactType.AUDIO_OVERVIEW_SCRIPT:
+            base_prompt = f"{MARKDOWN_ARTIFACT_FORMAT_RULES}\n\n{base_prompt}"
         if custom_prompt:
             base_prompt = (
                 f"{base_prompt}\n\n"

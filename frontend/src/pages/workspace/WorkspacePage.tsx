@@ -342,10 +342,101 @@ function renderQuizHtml(questions: any[]) {
   `
 }
 
+function renderDataTableHtml(rows: any[]) {
+  const columns = ['metric', 'value', 'unit', 'context', 'source']
+  const hasRows = rows.length > 0
+  return `
+    <div class="overflow-hidden rounded-xl border border-outline-variant bg-white shadow-sm">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-outline-variant text-sm">
+          <thead class="bg-surface-container-low">
+            <tr>
+              ${columns.map((column) => `
+                <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-on-surface">
+                  ${escapeHtml(column.replace(/_/g, ' '))}
+                </th>
+              `).join('')}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-outline-variant bg-white">
+            ${hasRows ? rows.map((row) => `
+              <tr class="align-top hover:bg-surface-container-lowest">
+                <td class="px-4 py-3 font-semibold text-on-surface">${escapeHtml(row.metric || '')}</td>
+                <td class="px-4 py-3 text-on-surface-variant">${escapeHtml(row.value || '')}</td>
+                <td class="px-4 py-3 text-on-surface-variant">${escapeHtml(row.unit || '')}</td>
+                <td class="px-4 py-3 min-w-[260px] text-on-surface-variant">${escapeHtml(row.context || '')}</td>
+                <td class="px-4 py-3 whitespace-nowrap">${row.source ? `<span class="source-cite">${escapeHtml(row.source)}</span>` : ''}</td>
+              </tr>
+            `).join('') : `
+              <tr>
+                <td colspan="${columns.length}" class="px-4 py-6 text-center text-sm text-on-surface-variant">
+                  No table rows were generated from the selected sources.
+                </td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `
+}
+
+function renderMindMapHtml(map: any) {
+  const branches = Array.isArray(map?.branches) ? map.branches : []
+  return `
+    <div class="space-y-5">
+      <div class="rounded-xl border border-outline-variant bg-surface-container-low px-5 py-4">
+        <p class="text-[11px] font-bold uppercase tracking-wide text-outline">Central Topic</p>
+        <h2 class="mt-1 text-xl font-bold text-on-surface">${escapeHtml(map?.topic || 'Mind Map')}</h2>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        ${branches.map((branch: any, branchIndex: number) => {
+          const color = /^#[0-9a-f]{6}$/i.test(String(branch.color || '')) ? branch.color : '#4F46E5'
+          const children = Array.isArray(branch.children) ? branch.children : []
+          return `
+            <section class="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+              <div class="mb-4 flex items-center gap-3">
+                <span class="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white" style="background:${escapeHtml(color)}">${branchIndex + 1}</span>
+                <h3 class="text-base font-bold text-on-surface">${escapeHtml(branch.name || `Branch ${branchIndex + 1}`)}</h3>
+              </div>
+              <div class="space-y-3">
+                ${children.map((child: any) => {
+                  const grandchildren = Array.isArray(child.children) ? child.children : []
+                  return `
+                    <div class="rounded-lg bg-surface-container-low p-3">
+                      <p class="text-sm font-semibold text-on-surface">${escapeHtml(child.name || '')}</p>
+                      ${grandchildren.length ? `
+                        <ul class="mt-2 space-y-1.5">
+                          ${grandchildren.map((item: any) => `
+                            <li class="flex gap-2 text-sm text-on-surface-variant">
+                              <span class="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full" style="background:${escapeHtml(color)}"></span>
+                              <span>${escapeHtml(item.name || '')}</span>
+                            </li>
+                          `).join('')}
+                        </ul>
+                      ` : ''}
+                    </div>
+                  `
+                }).join('')}
+              </div>
+            </section>
+          `
+        }).join('')}
+      </div>
+    </div>
+  `
+}
+
 function normalizeArtifactContent(tool: string, content: unknown) {
   const parsed = parseMaybeJson(content)
   const toolType = getTool(tool)?.type || tool
 
+  if (Array.isArray(parsed) && toolType === 'data_table') {
+    return DOMPurify.sanitize(renderDataTableHtml(parsed))
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && toolType === 'mind_map') {
+    return DOMPurify.sanitize(renderMindMapHtml(parsed))
+  }
   if (Array.isArray(parsed) && toolType === 'slide_deck') {
     return DOMPurify.sanitize(renderSlideDeckHtml(parsed))
   }
