@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -210,18 +211,31 @@ async def _process_source(
 
     await db.sources.update_one(
         {"_id": source_id},
-        {"$set": {"status": ProcessingStatus.PROCESSING.value, "updated_at": datetime.now(timezone.utc)}},
+        {
+            "$set": {
+                "status": ProcessingStatus.PROCESSING.value,
+                "metadata.progress_stage": "extracting",
+                "metadata.progress_pct": 5,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
     )
 
     try:
+        t0 = time.perf_counter()
+
+        # --- Phase 1: Extract text ---
         source_type = source.get("source_type")
         text = ""
         page_count = None
         chunks = []
 
+        await _update_progress(db, source_id, "extracting", 8)
+
         if source_type == SourceType.PDF.value:
             pages, page_count = await extract_pages_from_pdf(source["file_path"])
             text = "\n".join(pages)
+            await _update_progress(db, source_id, "extracting", 15)
             chunks = chunk_text_with_pages(pages, source_id, source["filename"])
         elif source_type == SourceType.DOCX.value:
             text = await extract_text_from_docx(source["file_path"])
@@ -236,12 +250,26 @@ async def _process_source(
         elif source_type == SourceType.URL.value:
             text = await extract_text_from_url(source["url"])
 
+        t_extract = time.perf_counter()
+        logger.info("Source %s extraction took %.2fs", source_id, t_extract - t0)
+
+        # --- Phase 2: Chunk ---
         word_count = len(text.split()) if text else 0
+        await _update_progress(db, source_id, "chunking", 18)
         if not chunks:
             chunks = chunk_text(text, source_id, source["filename"])
 
+        t_chunk = time.perf_counter()
+        logger.info(
+            "Source %s chunking took %.2fs (%d words -> %d chunks)",
+            source_id, t_chunk - t_extract, word_count, len(chunks),
+        )
+
+        await _update_progress(db, source_id, "storing_chunks", 25)
         chunk_count = await rag_service.store_source_chunks(source["workspace_id"], source_id, chunks)
         now = datetime.now(timezone.utc)
+        t_store = time.perf_counter()
+        logger.info("Source %s chunk storage took %.2fs", source_id, t_store - t_chunk)
 
         if settings.SOURCE_FAST_READY_BEFORE_EMBEDDING:
             await db.sources.update_one(
@@ -253,6 +281,8 @@ async def _process_source(
                         "page_count": page_count,
                         "word_count": word_count,
                         "metadata.embedding_status": "indexing",
+                        "metadata.progress_stage": "embedding",
+                        "metadata.progress_pct": 35,
                         "metadata.embedding_model": settings.OPENAI_EMBEDDING_MODEL,
                         "metadata.embedding_dimensions": settings.OPENAI_EMBEDDING_DIMENSIONS or "full",
                         "metadata.chroma_collection": rag_service.collection_name(source["workspace_id"]),
@@ -275,7 +305,11 @@ async def _process_source(
                 },
             )
 
-        logger.info(f"Source {source_id} text-ready: {chunk_count} chunks")
+        t_total = time.perf_counter()
+        logger.info(
+            "Source %s fully processed in %.2fs: %d chunks, %d words",
+            source_id, t_total - t0, chunk_count, word_count,
+        )
 
     except Exception as e:
         logger.error(f"Failed to process source {source_id}: {e}")
@@ -285,6 +319,8 @@ async def _process_source(
                 "$set": {
                     "status": ProcessingStatus.FAILED.value,
                     "error_message": str(e)[:500],
+                    "metadata.progress_stage": "failed",
+                    "metadata.progress_pct": 0,
                     "updated_at": datetime.now(timezone.utc),
                 }
             },
