@@ -244,6 +244,7 @@ async def _process_source(
 
         # --- Phase 1: Extract text ---
         source_type = source.get("source_type")
+        source_display_name = source.get("original_name") or source.get("filename")
         text = ""
         page_count = None
         chunks = []
@@ -253,7 +254,7 @@ async def _process_source(
         if source_type == SourceType.PDF.value:
             pages, page_count = await extract_pages_from_pdf(source["file_path"])
             await _update_progress(db, source_id, "extracting", 15)
-            chunks = chunk_text_with_pages(pages, source_id, source["filename"])
+            chunks = chunk_text_with_pages(pages, source_id, source_display_name)
             word_count = sum(len(page.split()) for page in pages)
         elif source_type == SourceType.DOCX.value:
             text = await extract_text_from_docx(source["file_path"])
@@ -276,7 +277,7 @@ async def _process_source(
             word_count = len(text.split()) if text else 0
         await _update_progress(db, source_id, "chunking", 18)
         if not chunks:
-            chunks = chunk_text(text, source_id, source["filename"])
+            chunks = chunk_text(text, source_id, source_display_name)
 
         t_chunk = time.perf_counter()
         logger.info(

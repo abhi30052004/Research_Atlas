@@ -278,22 +278,32 @@ function renderSlideDeckHtml(slides: any[]) {
 
 function renderFlashcardsHtml(cards: any[]) {
   return `
-    <div class="grid gap-4 md:grid-cols-2">
+    <div class="flashcard-grid">
       ${cards.map((card, index) => `
-        <section class="rounded-xl border border-amber-200 bg-amber-50/40 p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3 mb-4">
-            <span class="text-[11px] font-bold uppercase text-amber-700">Card ${escapeHtml(card.id || index + 1)}</span>
-            <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-200">${escapeHtml(card.category || 'Study')}</span>
-          </div>
-          <div class="rounded-lg bg-white border border-amber-100 p-4 mb-3">
-            <p class="text-xs font-semibold text-outline mb-1">Front</p>
-            <h3 class="text-base font-bold text-on-surface">${escapeHtml(card.front || '')}</h3>
-          </div>
-          <div class="rounded-lg bg-white border border-amber-100 p-4">
-            <p class="text-xs font-semibold text-outline mb-1">Back</p>
-            <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(card.back || '')}</p>
-          </div>
-          ${card.source ? `<p class="mt-3 text-[11px] font-mono text-outline">Source: ${escapeHtml(card.source)}</p>` : ''}
+        <section class="flashcard-item">
+          <input class="flashcard-toggle" type="checkbox" id="flashcard-${index}" />
+          <label class="flashcard-shell" for="flashcard-${index}">
+            <div class="flashcard-inner">
+              <div class="flashcard-face flashcard-front">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                  <span class="text-[11px] font-bold uppercase text-amber-700">Card ${escapeHtml(card.id || index + 1)}</span>
+                  <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-200">${escapeHtml(card.category || 'Study')}</span>
+                </div>
+                <p class="text-xs font-semibold text-outline mb-2">Front</p>
+                <h3 class="text-base font-bold text-on-surface leading-snug">${escapeHtml(card.front || '')}</h3>
+                ${card.source ? `<p class="mt-auto pt-4 text-[11px] font-mono text-outline">Source: ${escapeHtml(card.source)}</p>` : ''}
+              </div>
+              <div class="flashcard-face flashcard-back">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                  <span class="text-[11px] font-bold uppercase text-amber-700">Card ${escapeHtml(card.id || index + 1)}</span>
+                  <span class="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 border border-amber-200">${escapeHtml(card.card_type || 'answer')}</span>
+                </div>
+                <p class="text-xs font-semibold text-outline mb-2">Back</p>
+                <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(card.back || '')}</p>
+                ${card.source ? `<p class="mt-auto pt-4 text-[11px] font-mono text-outline">Source: ${escapeHtml(card.source)}</p>` : ''}
+              </div>
+            </div>
+          </label>
         </section>
       `).join('')}
     </div>

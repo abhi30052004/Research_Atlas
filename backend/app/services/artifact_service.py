@@ -188,7 +188,8 @@ Rules:
 - Create a polished business presentation structure, not a document pasted into slides.
 - Every slide title must be specific and presentation-ready.
 - Maximum 5 bullets per slide; each bullet must be under 12 words.
-- Use parallel bullet phrasing and avoid full paragraphs in bullets.
+- Each bullet must contain exactly one idea. Do not split one sentence across multiple bullets.
+- Use parallel bullet phrasing and avoid full paragraphs, semicolons, and multi-clause bullets.
 - Speaker notes must add context not visible in the bullets.
 - Include source_reference on every evidence-based slide.
 - Derive all content from the provided sources only.

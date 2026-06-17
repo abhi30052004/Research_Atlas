@@ -36,14 +36,7 @@ export const useAuthStore = create<AuthState>()(
 
       loginApi: async (credentials) => {
         const { data: tokenData } = await api.post('/auth/login', credentials)
-
-        // Store both access and refresh tokens
-        set({
-          token: tokenData.access_token,
-          refreshToken: tokenData.refresh_token,
-        })
-
-        const { data: userData } = await api.get('/auth/me')
+        const userData = tokenData.user || (await api.get('/auth/me')).data
         set({
           user: {
             id: userData.id,
@@ -58,9 +51,22 @@ export const useAuthStore = create<AuthState>()(
       },
 
       registerApi: async (userData) => {
-        await api.post('/auth/register', userData)
-        // After register, automatically log in
-        await get().loginApi({ email: userData.email, password: userData.password })
+        const { data } = await api.post('/auth/register', userData)
+        if (!data.access_token || !data.user) {
+          await get().loginApi({ email: userData.email, password: userData.password })
+          return
+        }
+        set({
+          user: {
+            id: data.user.id,
+            name: data.user.full_name || data.user.username,
+            email: data.user.email,
+            avatar: data.user.avatar_url,
+          },
+          token: data.access_token,
+          refreshToken: data.refresh_token,
+          isAuthenticated: true,
+        })
       },
 
       logoutApi: async () => {

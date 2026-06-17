@@ -352,6 +352,39 @@ class RAGService:
             logger.debug(f"Mongo chunk fallback retrieval failed for workspace {workspace_id}: {e}")
             return []
 
+    async def _apply_source_display_names(self, docs: List[Dict[str, Any]]) -> None:
+        source_ids = list({doc.get("source_id") for doc in docs if doc.get("source_id")})
+        if not source_ids:
+            return
+
+        try:
+            db = get_db()
+            names = {}
+            cursor = db.sources.find(
+                {"_id": {"$in": source_ids}},
+                {"original_name": 1, "filename": 1},
+            )
+            async for source in cursor:
+                display_name = source.get("original_name") or source.get("filename")
+                if display_name:
+                    names[str(source["_id"])] = display_name
+
+            for doc in docs:
+                display_name = names.get(str(doc.get("source_id")))
+                if not display_name:
+                    continue
+                metadata = doc.setdefault("metadata", {})
+                stored_filename = doc.get("filename") or metadata.get("filename")
+                if stored_filename and stored_filename != display_name:
+                    metadata.setdefault("stored_filename", stored_filename)
+                    doc.setdefault("stored_filename", stored_filename)
+                doc["filename"] = display_name
+                doc["source_name"] = display_name
+                metadata["filename"] = display_name
+                metadata["source_name"] = display_name
+        except Exception as e:
+            logger.debug(f"Source display-name enrichment failed: {e}")
+
     async def retrieve(
         self,
         workspace_id: str,
@@ -392,7 +425,9 @@ class RAGService:
                 key = doc.get("chunk_id") or f"{doc.get('source_id')}:{doc.get('content')[:80]}"
                 if key not in deduped or doc["relevance_score"] > deduped[key]["relevance_score"]:
                     deduped[key] = doc
-            return sorted(deduped.values(), key=lambda x: x["relevance_score"], reverse=True)[:top_k]
+            results = sorted(deduped.values(), key=lambda x: x["relevance_score"], reverse=True)[:top_k]
+            await self._apply_source_display_names(results)
+            return results
         except Exception as e:
             logger.warning(f"Retrieval error for workspace {workspace_id}: {e}")
             return []

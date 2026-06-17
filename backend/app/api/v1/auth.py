@@ -16,18 +16,9 @@ from app.core.deps import get_current_user
 router = APIRouter()
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=TokenResponse)
 async def register(data: RegisterRequest):
-    user = await auth_service.register(data)
-    return {
-        "message": "Registration successful",
-        "user": {
-            "id": user["id"],
-            "email": user["email"],
-            "username": user["username"],
-            "full_name": user.get("full_name"),
-        },
-    }
+    return await auth_service.register(data)
 
 
 @router.post("/login", response_model=TokenResponse)
