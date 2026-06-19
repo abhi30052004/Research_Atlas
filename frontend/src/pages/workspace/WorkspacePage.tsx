@@ -51,8 +51,6 @@ import {
 } from 'lucide-react'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 
 interface Message {
   id: string
@@ -224,40 +222,8 @@ function renderMessageContent(content: string, isUser?: boolean, citations: Cita
   if (isUser) {
     return <div className="whitespace-pre-wrap">{content}</div>
   }
-  return (
-    <div className="prose-atlas max-w-none">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          // Style headings
-          h1: ({children}) => <h1>{children}</h1>,
-          h2: ({children}) => <h2>{children}</h2>,
-          h3: ({children}) => <h3>{children}</h3>,
-          // Style paragraphs — convert source citations inline
-          p: ({children, ...props}) => {
-            const text = String(children || '')
-            if (text.includes('[Source')) {
-              return <p {...props} dangerouslySetInnerHTML={{ __html: convertSourceCitations(text, citations, sources) }} />
-            }
-            return <p {...props}>{children}</p>
-          },
-          // Style tables
-          table: ({children}) => <table>{children}</table>,
-          // Style code blocks
-          code: ({children, className}) => {
-            const isBlock = className?.includes('language-')
-            return isBlock
-              ? <code className={className}>{children}</code>
-              : <code>{children}</code>
-          },
-          // Style blockquotes
-          blockquote: ({children}) => <blockquote>{children}</blockquote>,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
+  const html = DOMPurify.sanitize(marked.parse(convertSourceCitations(content, citations, sources)) as string)
+  return <div className="prose-atlas max-w-none" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 /* ---------- Tool icon lookup for artifact cards ---------- */

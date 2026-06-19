@@ -105,10 +105,10 @@ async def generate_answer(state: AgentState) -> AgentState:
     ranked_docs = state["ranked_docs"]
 
     context_parts = []
-    for i, doc in enumerate(ranked_docs, 1):
+    for doc in ranked_docs:
         fname = doc.get("filename", "unknown")
         page = f" p.{doc['page_number']}" if doc.get("page_number") else ""
-        context_parts.append(f"[Source {i}: {fname}{page}]\n{doc['content']}")
+        context_parts.append(f"[Source: {fname}{page}]\n{doc['content']}")
     if not context_parts:
         context = "No relevant sources found in the workspace."
         system_prompt = (
@@ -129,12 +129,14 @@ async def generate_answer(state: AgentState) -> AgentState:
             "1. Source Priority and Citations\n"
             "- Use the source context whenever it contains relevant information; do not answer from general "
             "knowledge when the sources can answer the question.\n"
-            "- Every sourced sentence or paragraph must include at least one citation in the exact format [Source N], "
+            "- Every sourced sentence or paragraph must include at least one citation using the exact source name "
+            "in this format: [Source: <source name>], "
             "placed immediately after the statement it supports, not bundled at the end of a long paragraph.\n"
             "- If a claim is supported by more than one source, cite all of them.\n"
             "- For list, all, every, each, or project/item enumeration questions, include every supported item "
             "present in the source context instead of stopping after the first relevant item.\n"
-            "- Never invent or guess a citation number, and never attach [Source N] to a general-knowledge statement.\n\n"
+            "- Never invent source names, never cite as [Source 1] or [Source N], and never attach a source citation "
+            "to a general-knowledge statement.\n\n"
             "2. Synthesis in Your Own Words\n"
             "- Rephrase and synthesize source content in your own words; do not reproduce passages verbatim unless "
             "the user explicitly asks for a direct quote or excerpt.\n"
@@ -159,17 +161,17 @@ async def generate_answer(state: AgentState) -> AgentState:
             "- Limit it to one or two sentences, label it exactly as: (General background - not from uploaded sources)\n"
             "- It must never override, contradict, or outweigh what the sources say.\n\n"
             "5. Format\n"
-            "- Simple factual questions: answer in 1-3 sentences with inline [Source N] citations, no headers.\n"
+            "- Simple factual questions: answer in 1-3 sentences with inline [Source: <source name>] citations, no headers.\n"
             "- Substantive or multi-part questions: use this structure:\n"
             "  Summary\n"
             "  Key Findings\n"
-            "  Supporting Evidence [Source N]\n"
+            "  Supporting Evidence [Source: <source name>]\n"
             "  General Background (only if rule 4 applies)\n"
             "- Never add a section that would be empty; omit unused sections rather than writing 'N/A'.\n\n"
             "EXAMPLE\n"
             "Question: \"What architecture does the model use?\"\n"
-            "Sources: [Source 1] describes a transformer-based encoder; [Source 2] gives no architectural detail.\n"
-            "Correct answer: \"The model uses a transformer-based encoder [Source 1]. (General background - not "
+            "Sources: [Source: architecture-notes.pdf] describes a transformer-based encoder; [Source: release-summary.pdf] gives no architectural detail.\n"
+            "Correct answer: \"The model uses a transformer-based encoder [Source: architecture-notes.pdf]. (General background - not "
             "from uploaded sources) Transformers process input sequences using self-attention rather than recurrence, "
             "which allows them to handle long-range dependencies more efficiently than earlier architectures.\""
         )
