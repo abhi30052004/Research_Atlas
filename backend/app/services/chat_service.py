@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, List
 from bson import ObjectId
 from fastapi import HTTPException
 
@@ -82,6 +82,7 @@ class ChatService:
         user_id: str,
         content: str,
         model: Optional[str] = None,
+        source_ids: Optional[List[str]] = None,
     ) -> AsyncGenerator[str, None]:
         db = get_db()
         chat = await db.chats.find_one({"_id": chat_id, "user_id": user_id})
@@ -103,6 +104,7 @@ class ChatService:
             "content": content,
             "citations": [],
             "followup_suggestions": [],
+            "source_ids": source_ids or [],
             "model_used": None,
             "tokens_used": None,
             "created_at": datetime.now(timezone.utc),
@@ -121,6 +123,7 @@ class ChatService:
                 workspace_id=chat["workspace_id"],
                 user_id=user_id,
                 model=effective_model,
+                source_ids=source_ids,
             )
             response_text = result["response"]
             citations = result["citations"]
@@ -139,6 +142,7 @@ class ChatService:
                 "content": response_text,
                 "citations": citations,
                 "followup_suggestions": followups,
+                "source_ids": result.get("source_ids", source_ids or []),
                 "model_used": effective_model,
                 "tokens_used": tokens_used,
                 "created_at": datetime.now(timezone.utc),
@@ -173,7 +177,12 @@ class ChatService:
             )
 
     async def regenerate_message(
-        self, chat_id: str, user_id: str, message_id: str, model: Optional[str] = None
+        self,
+        chat_id: str,
+        user_id: str,
+        message_id: str,
+        model: Optional[str] = None,
+        source_ids: Optional[List[str]] = None,
     ) -> dict:
         db = get_db()
         chat = await db.chats.find_one({"_id": chat_id, "user_id": user_id})
@@ -194,11 +203,13 @@ class ChatService:
             raise HTTPException(status_code=400, detail="No user message to regenerate from")
 
         effective_model = model or chat.get("model", settings.OPENAI_DEFAULT_MODEL)
+        effective_source_ids = source_ids if source_ids is not None else prev_user_msg.get("source_ids")
         result = await run_agent(
             query=prev_user_msg["content"],
             workspace_id=chat["workspace_id"],
             user_id=user_id,
             model=effective_model,
+            source_ids=effective_source_ids,
         )
 
         updated_msg = {
@@ -206,6 +217,7 @@ class ChatService:
             "content": result["response"],
             "citations": result["citations"],
             "followup_suggestions": result["followups"],
+            "source_ids": result.get("source_ids", effective_source_ids or []),
             "model_used": effective_model,
             "tokens_used": result.get("tokens_used", 0),
             "created_at": datetime.now(timezone.utc),

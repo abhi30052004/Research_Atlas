@@ -45,7 +45,7 @@ async def stream_message(
 ):
     async def generate():
         async for chunk in chat_service.send_message_stream(
-            chat_id, str(current_user["_id"]), data.content, data.model
+            chat_id, str(current_user["_id"]), data.content, data.model, data.source_ids
         ):
             yield f"data: {chunk}\n\n"
 
@@ -59,7 +59,7 @@ async def regenerate_message(
     current_user: dict = Depends(get_current_user),
 ):
     return await chat_service.regenerate_message(
-        chat_id, str(current_user["_id"]), data.message_id, data.model
+        chat_id, str(current_user["_id"]), data.message_id, data.model, data.source_ids
     )
 
 
@@ -93,7 +93,13 @@ async def websocket_chat(websocket: WebSocket, workspace_id: str, token: str = Q
                 if not chat_id or not content:
                     await websocket.send_text(json.dumps({"type": "error", "content": "Missing chat_id or content"}))
                     continue
-                async for chunk in chat_service.send_message_stream(chat_id, user_id, content, model):
+                async for chunk in chat_service.send_message_stream(
+                    chat_id,
+                    user_id,
+                    content,
+                    model,
+                    msg.get("source_ids"),
+                ):
                     await websocket.send_text(chunk)
             elif action == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))

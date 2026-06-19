@@ -488,6 +488,12 @@ class ArtifactService:
                 detail="Uploaded sources were processed, but no readable text chunks were found. Please upload a text-based PDF, DOCX, TXT, or web URL source.",
             )
 
+        if artifact_type == ArtifactType.COMPARISON_REPORT and len(ready_source_ids) < 2:
+            raise HTTPException(
+                status_code=422,
+                detail="Select at least two ready sources to generate a comparison report.",
+            )
+
         query = title or artifact_type.value.replace("_", " ")
         retrieved_docs = await rag_service.retrieve(
             workspace_id, query, top_k=settings.ARTIFACT_RETRIEVAL_TOP_K,

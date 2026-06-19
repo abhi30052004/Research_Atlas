@@ -38,7 +38,7 @@ export default function RegisterPage() {
         password: form.password
       })
       setStatus('success')
-      setTimeout(() => navigate('/dashboard'), 900)
+      navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
       setErrors({ global: err.response?.data?.detail || 'Failed to register.' })
@@ -73,7 +73,7 @@ export default function RegisterPage() {
   return (
     <div className={containerClassName}>
       <div className="fixed inset-0 -z-20">
-        <video autoPlay muted playsInline loop className="absolute inset-0 w-full h-full object-cover">
+        <video autoPlay muted playsInline loop preload="metadata" className="absolute inset-0 w-full h-full object-cover">
           <source src="/login1.mp4" type="video/mp4" />
         </video>
         <div className="absolute inset-0 bg-slate-950/80" />

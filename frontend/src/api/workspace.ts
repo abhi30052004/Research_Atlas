@@ -56,8 +56,7 @@ export const uploadSourcesBatch = async (files: File[], workspaceId: string) => 
 export const addUrlSource = async (url: string, workspaceId: string) => {
   const { data } = await api.post(`/sources/url`, {
     url,
-    workspace_id: workspaceId,
-    name: url
+    workspace_id: workspaceId
   })
   return data
 }

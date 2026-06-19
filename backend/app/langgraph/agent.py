@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, END
+from typing import Optional, List
 
 from app.langgraph.state import AgentState
 from app.langgraph.nodes import (
@@ -40,13 +41,14 @@ async def run_agent(
     workspace_id: str,
     user_id: str,
     model: str = "gpt-4o",
+    source_ids: Optional[List[str]] = None,
 ) -> AgentState:
     initial_state: AgentState = {
         "query": query,
         "workspace_id": workspace_id,
         "user_id": user_id,
         "model": model,
-        "source_ids": [],
+        "source_ids": source_ids or [],
         "retrieval_top_k": 0,
         "retrieved_docs": [],
         "ranked_docs": [],

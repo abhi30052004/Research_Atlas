@@ -42,7 +42,7 @@ def _chat_retrieval_top_k(query: str) -> int:
 
 async def analyze_query(state: AgentState) -> AgentState:
     logger.info(f"Analyzing query: {state['query'][:80]}")
-    state["source_ids"] = []
+    state["source_ids"] = state.get("source_ids") or []
     state["retrieval_top_k"] = _chat_retrieval_top_k(state["query"])
     state["retrieved_docs"] = []
     state["ranked_docs"] = []
@@ -58,15 +58,17 @@ async def retrieve_documents(state: AgentState) -> AgentState:
     try:
         db = get_db()
         ready_source_ids = []
-        cursor = db.sources.find(
-            {
-                "workspace_id": state["workspace_id"],
-                "user_id": state["user_id"],
-                "status": ProcessingStatus.COMPLETED.value,
-                "chunk_count": {"$gt": 0},
-            },
-            {"_id": 1},
-        )
+        selected_source_ids = state.get("source_ids") or []
+        source_query = {
+            "workspace_id": state["workspace_id"],
+            "user_id": state["user_id"],
+            "status": ProcessingStatus.COMPLETED.value,
+            "chunk_count": {"$gt": 0},
+        }
+        if selected_source_ids:
+            source_query["_id"] = {"$in": selected_source_ids}
+
+        cursor = db.sources.find(source_query, {"_id": 1})
         async for source in cursor:
             ready_source_ids.append(str(source["_id"]))
 

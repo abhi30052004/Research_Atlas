@@ -30,7 +30,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true }
     try {
       await loginApi({ email, password })
       setStatus('success')
-      setTimeout(() => navigate('/dashboard'), 400)
+      navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
       setError(err.response?.data?.detail || 'Invalid email or password.')
@@ -79,7 +79,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true }
       {backgroundVideo && (
         <>
           <div className="fixed inset-0 -z-20">
-            <video autoPlay muted playsInline loop className="absolute inset-0 w-full h-full object-cover">
+            <video autoPlay muted playsInline loop preload="metadata" className="absolute inset-0 w-full h-full object-cover">
               <source src="/login1.mp4" type="video/mp4" />
             </video>
             <div className="absolute inset-0 bg-slate-950/75" />

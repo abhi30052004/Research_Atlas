@@ -24,6 +24,7 @@ def make_state():
         "user_id": "user_1",
         "model": "gpt-4o",
         "source_ids": [],
+        "retrieval_top_k": 0,
         "retrieved_docs": [],
         "ranked_docs": [],
         "response": "",
@@ -73,6 +74,51 @@ async def test_retrieve_documents_uses_completed_sources_with_chunks():
         source_ids=["source_1", "source_2"],
     )
     assert state["source_ids"] == ["source_1", "source_2"]
+    assert state["retrieved_docs"] == retrieved_docs
+
+
+@pytest.mark.asyncio
+async def test_retrieve_documents_limits_to_selected_ready_sources():
+    from app.core.config import settings
+    from app.langgraph.nodes import retrieve_documents
+
+    db = MagicMock()
+    db.sources.find.return_value = AsyncCursor([{"_id": "source_2"}])
+    retrieved_docs = [
+        {
+            "content": "Selected source content",
+            "source_id": "source_2",
+            "chunk_id": "source_2_chunk_0",
+            "relevance_score": 0.9,
+        }
+    ]
+    state_in = make_state()
+    state_in["source_ids"] = ["source_2"]
+
+    with (
+        patch("app.langgraph.nodes.get_db", return_value=db),
+        patch("app.langgraph.nodes.rag_service.retrieve", new=AsyncMock(return_value=retrieved_docs)) as mock_retrieve,
+        patch.object(settings, "CHAT_RETRIEVAL_TOP_K", 18),
+    ):
+        state = await retrieve_documents(state_in)
+
+    db.sources.find.assert_called_once_with(
+        {
+            "workspace_id": "workspace_1",
+            "user_id": "user_1",
+            "status": "completed",
+            "chunk_count": {"$gt": 0},
+            "_id": {"$in": ["source_2"]},
+        },
+        {"_id": 1},
+    )
+    mock_retrieve.assert_awaited_once_with(
+        workspace_id="workspace_1",
+        query="summarize this source",
+        top_k=18,
+        source_ids=["source_2"],
+    )
+    assert state["source_ids"] == ["source_2"]
     assert state["retrieved_docs"] == retrieved_docs
 
 

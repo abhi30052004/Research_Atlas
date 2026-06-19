@@ -13,11 +13,13 @@ class ChatCreate(BaseModel):
 class ChatMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     model: Optional[str] = None
+    source_ids: Optional[List[str]] = None
 
 
 class RegenerateRequest(BaseModel):
     message_id: str
     model: Optional[str] = None
+    source_ids: Optional[List[str]] = None
 
 
 class ChatResponse(BaseModel):

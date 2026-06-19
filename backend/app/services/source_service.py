@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from typing import List, Optional
+from urllib.parse import unquote, urlsplit
 from bson import ObjectId
 from fastapi import BackgroundTasks, HTTPException, UploadFile
 
@@ -15,6 +17,23 @@ logger = logging.getLogger(__name__)
 
 
 class SourceService:
+    def _url_display_name(self, url: str) -> str:
+        parsed = urlsplit(url if "://" in url else f"https://{url}")
+        host = (parsed.netloc or parsed.path.split("/", 1)[0]).split("@")[-1].split(":")[0]
+        host = host[4:] if host.startswith("www.") else host
+
+        path_parts = [unquote(part) for part in parsed.path.split("/") if part]
+        last_part = path_parts[-1] if path_parts else ""
+        last_part = re.sub(r"\.[a-zA-Z0-9]{1,8}$", "", last_part)
+        last_part = re.sub(r"[-_]+", " ", last_part).strip()
+
+        if last_part and last_part.lower() not in {"home", "index"}:
+            display_name = f"{host} - {last_part}"
+        else:
+            display_name = host
+
+        return (display_name or url)[:80]
+
     def _log_processing_result(self, source_id: str, task: asyncio.Task) -> None:
         try:
             task.result()
@@ -215,7 +234,8 @@ class SourceService:
             raise HTTPException(status_code=404, detail="Workspace not found")
 
         source_id = str(ObjectId())
-        display_name = name or url[:80]
+        cleaned_name = name.strip() if name else ""
+        display_name = cleaned_name if cleaned_name and cleaned_name != url else self._url_display_name(url)
         doc = {
             "_id": source_id,
             "workspace_id": workspace_id,

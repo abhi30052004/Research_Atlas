@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import TopNav from '../../components/navigation/TopNav'
 import { useUIStore } from '../../store/uiStore'
@@ -166,6 +166,24 @@ function mapApiSource(source: any, workspaceId: string): Source {
     errorMessage: source.error_message || source.errorMessage,
     progressStage: meta.progress_stage as ProgressStage | undefined,
     progressPct: typeof meta.progress_pct === 'number' ? meta.progress_pct : undefined,
+  }
+}
+
+function displayNameFromUrl(rawUrl: string): string {
+  try {
+    const normalized = rawUrl.includes('://') ? rawUrl : `https://${rawUrl}`
+    const url = new URL(normalized)
+    const host = url.hostname.replace(/^www\./, '')
+    const pathParts = url.pathname.split('/').filter(Boolean)
+    const lastPart = pathParts[pathParts.length - 1]
+      ?.replace(/\.[a-zA-Z0-9]{1,8}$/, '')
+      .replace(/[-_]+/g, ' ')
+      .trim()
+    return lastPart && !['home', 'index'].includes(lastPart.toLowerCase())
+      ? `${host} - ${lastPart}`.slice(0, 80)
+      : host.slice(0, 80)
+  } catch {
+    return rawUrl.slice(0, 80)
   }
 }
 
@@ -498,6 +516,8 @@ export default function WorkspacePage() {
   const [activeTab, setActiveTab] = useState<'chat' | 'output' | 'editor'>('chat')
 
   const [sources, setSources] = useState<Source[]>([])
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [hasCustomSourceSelection, setHasCustomSourceSelection] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [currentChatId, setCurrentChatId] = useState<string | null>(null)
 
@@ -595,21 +615,65 @@ export default function WorkspacePage() {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
   }).length
 
-  const readySources = sources.filter((s) => s.status === 'processed')
+  const readySources = useMemo(() => sources.filter((s) => s.status === 'processed'), [sources])
+  const selectedReadySources = useMemo(
+    () => readySources.filter((s) => selectedSourceIds.includes(s.id)),
+    [readySources, selectedSourceIds]
+  )
+  const selectedReadySourceIds = useMemo(
+    () => selectedReadySources.map((s) => s.id),
+    [selectedReadySources]
+  )
   const hasProcessingSources = sources.some((s) => s.status === 'pending' || s.status === 'processing')
   const hasFailedSources = sources.some((s) => s.status === 'failed')
-  const canGenerate = sources.length > 0 && readySources.length === sources.length && !isGeneratingArtifact
+  const selectedStudioTool = selectedTool ? getTool(selectedTool) : undefined
+  const isComparisonReportSelected = selectedStudioTool?.type === 'comparison_report'
+  const hasSelectedReadySource = selectedReadySources.length > 0
+  const canChat = hasSelectedReadySource && !isTyping
+  const canGenerate = hasSelectedReadySource && (!isComparisonReportSelected || selectedReadySources.length >= 2) && !isGeneratingArtifact
   const generateHint = isGeneratingArtifact
     ? `Generating ${selectedTool}...`
     : sources.length === 0
       ? 'Add at least one source first.'
-      : hasProcessingSources
-        ? 'Wait until source processing finishes.'
-        : hasFailedSources
-          ? 'Delete or re-upload failed sources.'
-          : readySources.length === 0
-            ? 'No processed sources are ready yet.'
-            : null
+      : readySources.length === 0
+        ? hasProcessingSources
+          ? 'Wait until source processing finishes.'
+          : hasFailedSources
+            ? 'Delete or re-upload failed sources.'
+            : 'No processed sources are ready yet.'
+        : selectedReadySources.length === 0
+          ? 'Select at least one ready source.'
+          : isComparisonReportSelected && selectedReadySources.length < 2
+            ? 'Select at least two ready sources for a comparison report.'
+          : null
+
+  useEffect(() => {
+    const readyIds = readySources.map((source) => source.id)
+    setSelectedSourceIds((previous) => {
+      if (!hasCustomSourceSelection) return readyIds
+      const readyIdSet = new Set(readyIds)
+      return previous.filter((id) => readyIdSet.has(id))
+    })
+  }, [readySources, hasCustomSourceSelection])
+
+  const toggleSourceSelection = useCallback((sourceId: string, checked: boolean) => {
+    setHasCustomSourceSelection(true)
+    setSelectedSourceIds((previous) => (
+      checked
+        ? Array.from(new Set([...previous, sourceId]))
+        : previous.filter((id) => id !== sourceId)
+    ))
+  }, [])
+
+  const selectAllReadySources = useCallback(() => {
+    setHasCustomSourceSelection(true)
+    setSelectedSourceIds(readySources.map((source) => source.id))
+  }, [readySources])
+
+  const clearSelectedSources = useCallback(() => {
+    setHasCustomSourceSelection(true)
+    setSelectedSourceIds([])
+  }, [])
 
   const refreshSources = useCallback(async () => {
     if (!workspaceId) return
@@ -660,6 +724,16 @@ export default function WorkspacePage() {
     const content = text || input.trim()
     if (!content || !currentChatId) return
 
+    if (sources.length === 0) {
+      addToast('Add at least one source before asking Atlas.', 'warning')
+      return
+    }
+
+    if (selectedReadySourceIds.length === 0) {
+      addToast('Select at least one ready source before asking Atlas.', 'warning')
+      return
+    }
+
     // Check AI limit before sending
     if (todayCount >= aiDailyLimit) {
       addToast(`Daily AI limit reached (${aiDailyLimit}/${aiDailyLimit}). Increase your limit in Settings → AI Limits.`, 'warning')
@@ -687,7 +761,7 @@ export default function WorkspacePage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${useAuthStore.getState().token}`
         },
-        body: JSON.stringify({ content, model: 'gpt-4o' })
+        body: JSON.stringify({ content, model: 'gpt-4o', source_ids: selectedReadySourceIds })
       })
 
       if (!response.ok) throw new Error('Failed to send message')
@@ -768,6 +842,11 @@ export default function WorkspacePage() {
   const regenerateMessage = async (msgId: string) => {
     if (!currentChatId) return
 
+    if (sources.length > 0 && selectedReadySourceIds.length === 0) {
+      addToast('Select at least one ready source before regenerating.', 'warning')
+      return
+    }
+
     // Check AI limit before regenerating
     if (todayCount >= aiDailyLimit) {
       addToast(`Daily AI limit reached (${aiDailyLimit}/${aiDailyLimit}). Increase your limit in Settings → AI Limits.`, 'warning')
@@ -791,7 +870,7 @@ export default function WorkspacePage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${useAuthStore.getState().token}`
         },
-        body: JSON.stringify({ message_id: msgId, model: 'gpt-4o' })
+        body: JSON.stringify({ message_id: msgId, model: 'gpt-4o', source_ids: selectedReadySourceIds })
       })
 
       if (!response.ok) throw new Error('Failed to regenerate')
@@ -939,10 +1018,11 @@ export default function WorkspacePage() {
   const addUrl = async () => {
     if (!urlValue.trim() || !workspaceId) return
     const tempId = Date.now().toString()
+    const urlDisplayName = displayNameFromUrl(urlValue.trim())
     const newSource: Source = {
       id: tempId,
       type: 'WEB',
-      name: urlValue,
+      name: urlDisplayName,
       meta: urlValue,
       status: 'processing',
       workspace_id: workspaceId
@@ -1005,19 +1085,14 @@ export default function WorkspacePage() {
       return
     }
 
-    if (hasProcessingSources) {
-      addToast('Source processing is still running. Please wait until all sources are processed.', 'warning')
-      refreshSources()
-      return
-    }
-
-    if (hasFailedSources) {
-      addToast('One or more sources failed to process. Delete or re-upload failed sources before generating.', 'error')
-      return
-    }
-
     if (readySources.length === 0) {
       addToast('No processed sources are ready for generation yet.', 'warning')
+      if (hasProcessingSources) refreshSources()
+      return
+    }
+
+    if (selectedReadySourceIds.length === 0) {
+      addToast('Select at least one ready source before generating.', 'warning')
       return
     }
 
@@ -1032,7 +1107,7 @@ export default function WorkspacePage() {
         workspace_id: workspaceId,
         artifact_type: artifact_type,
         title: `${selectedTool} — ${new Date().toLocaleString()}`,
-        source_ids: readySources.map(s => s.id)
+        source_ids: selectedReadySourceIds
       })
 
       const tool = rawArtifact.artifact_type || rawArtifact.tool || artifact_type
@@ -1043,7 +1118,7 @@ export default function WorkspacePage() {
         title: rawArtifact.title || formatToolName(tool),
         content: normalizeArtifactContent(tool, rawArtifact.content),
         createdAt: new Date(rawArtifact.created_at || rawArtifact.createdAt || new Date()),
-        sourceCount: rawArtifact.source_ids?.length || readySources.length
+        sourceCount: rawArtifact.source_ids?.length || selectedReadySourceIds.length
       }
 
       setArtifacts((prev) => [newArtifact, ...prev])
@@ -1072,7 +1147,7 @@ export default function WorkspacePage() {
     } finally {
       setIsGeneratingArtifact(false)
     }
-  }, [selectedTool, workspaceId, isGeneratingArtifact, sources, readySources, hasProcessingSources, hasFailedSources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast, refreshSources])
+  }, [selectedTool, workspaceId, isGeneratingArtifact, sources, readySources, selectedReadySourceIds, hasProcessingSources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast, refreshSources])
 
   /* ---- Artifact actions ---- */
   const handleDeleteArtifact = async (id: string) => {
@@ -1155,6 +1230,22 @@ export default function WorkspacePage() {
                 </button>
               </div>
             )}
+
+            {readySources.length > 0 && (
+              <div className="mt-3 flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-on-surface-variant">
+                  {selectedReadySources.length} of {readySources.length} ready selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <button onClick={selectAllReadySources} className="font-medium text-secondary hover:underline">
+                    All
+                  </button>
+                  <button onClick={clearSelectedSources} className="font-medium text-outline hover:text-on-surface">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
@@ -1167,10 +1258,23 @@ export default function WorkspacePage() {
                 <p className="text-xs text-outline mt-1">Upload files or add URLs</p>
               </div>
             )}
-            {sources.map((src) => (
+            {sources.map((src) => {
+              const isReady = src.status === 'processed'
+              const isSelected = selectedSourceIds.includes(src.id)
+              return (
               <div key={src.id} className={`bg-surface-container-lowest border border-outline-variant p-3 rounded-lg hover:shadow-sm transition-all group ${src.status === 'processing' || src.status === 'pending' ? 'opacity-90' : ''}`}>
                 <div className="flex items-start justify-between mb-1.5">
-                  <TypeBadge type={src.type} />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={isReady && isSelected}
+                      disabled={!isReady}
+                      onChange={(e) => toggleSourceSelection(src.id, e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-outline-variant accent-secondary disabled:opacity-40"
+                      title={isReady ? 'Use this source' : 'Source is not ready'}
+                    />
+                    <TypeBadge type={src.type} />
+                  </div>
                   <div className="flex items-center gap-1">
                     {src.status === 'failed' ? (
                       <span className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
@@ -1222,7 +1326,7 @@ export default function WorkspacePage() {
                   <p className="text-[11px] text-red-600 mt-1 line-clamp-2">{src.errorMessage}</p>
                 )}
               </div>
-            ))}
+            )})}
           </div>
         </aside>
 
@@ -1317,7 +1421,8 @@ export default function WorkspacePage() {
                           </button>
                           <button
                             onClick={() => regenerateMessage(msg.id)}
-                            className="px-3 py-1.5 border border-outline-variant rounded-full text-xs hover:bg-surface-container transition-colors flex items-center gap-1"
+                            disabled={!canChat}
+                            className="px-3 py-1.5 border border-outline-variant rounded-full text-xs hover:bg-surface-container transition-colors flex items-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed"
                           >
                             <RefreshCw className="w-3 h-3" /> Regenerate
                           </button>
@@ -1346,9 +1451,23 @@ export default function WorkspacePage() {
 
               {/* Input */}
               <div className="px-6 pb-5 bg-surface-container-lowest border-t border-outline-variant pt-3 flex-shrink-0">
+                <div className="mb-2 flex items-center justify-between text-[11px] text-on-surface-variant">
+                  <span>
+                    {selectedReadySources.length > 0
+                      ? `Using ${selectedReadySources.length} of ${readySources.length} ready sources`
+                      : readySources.length > 0
+                        ? 'No ready sources selected'
+                        : 'No ready sources available'}
+                  </span>
+                </div>
                 <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3">
                   {SUGGESTED.map((s) => (
-                    <button key={s} onClick={() => sendMessage(s.slice(1, -1))} className="whitespace-nowrap px-3 py-1.5 bg-surface-container border border-outline-variant rounded-full text-xs hover:bg-surface-container-high transition-all">
+                    <button
+                      key={s}
+                      onClick={() => sendMessage(s.slice(1, -1))}
+                      disabled={!canChat}
+                      className="whitespace-nowrap px-3 py-1.5 bg-surface-container border border-outline-variant rounded-full text-xs hover:bg-surface-container-high transition-all disabled:opacity-45 disabled:cursor-not-allowed"
+                    >
                       {s}
                     </button>
                   ))}
@@ -1362,13 +1481,14 @@ export default function WorkspacePage() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                    placeholder="Ask Atlas anything about your sources..."
-                    className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 focus:border-transparent resize-none py-2 text-sm placeholder:text-outline-variant"
+                    placeholder={canChat ? 'Ask Atlas anything about your selected sources...' : 'Select a ready source to chat...'}
+                    disabled={!canChat}
+                    className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 focus:border-transparent resize-none py-2 text-sm placeholder:text-outline-variant disabled:cursor-not-allowed disabled:opacity-60"
                     style={{ maxHeight: '120px' }}
                   />
                   <button
                     onClick={() => sendMessage()}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() || !canChat}
                     className="bg-primary text-white p-2 rounded-lg hover:bg-zinc-800 transition-all disabled:opacity-40 active:scale-95"
                   >
                     <Send className="w-4 h-4" />
@@ -1715,6 +1835,11 @@ export default function WorkspacePage() {
           {selectedTool && (
             <div className="mx-4 mb-4 p-3 bg-surface-container-lowest border border-outline-variant rounded-lg">
               <p className="text-xs font-semibold text-on-surface mb-2">{selectedTool}</p>
+              <p className="mb-2 text-[11px] text-on-surface-variant">
+                {selectedReadySources.length > 0
+                  ? `Using ${selectedReadySources.length} selected source${selectedReadySources.length === 1 ? '' : 's'}`
+                  : 'No ready sources selected'}
+              </p>
               <button
                 onClick={handleGenerate}
                 disabled={!canGenerate}
