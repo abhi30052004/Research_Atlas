@@ -95,7 +95,7 @@ const STUDIO_TOOLS = [
   { category: "Presentation", icon: <Volume2 className="w-4 h-4" />, label: "Audio Overview", type: "audio_overview_script" },
 ]
 
-const SUGGESTED = ['"Summarize ESG goals"', '"Identify key risks"', '"Compare with Q3"']
+const SUGGESTED = ['"Summarize"', '"Key Points"', '"Insights"']
 const SOURCE_REFRESH_FAST_MS = 2000
 const SOURCE_REFRESH_SLOW_MS = 5000
 const SOURCE_REFRESH_BACKOFF_AFTER_MS = 15000
