@@ -54,9 +54,15 @@ async def api_root():
     return {
         "status": "ok",
         "service": "Atlas AI API",
-        "health": "/api/v1/health",
+        "health": "/health",
         "docs": "/docs",
     }
+
+
+@app.get("/health")
+async def root_health_check():
+    """Root-level health check for Render – always returns 200 OK instantly."""
+    return {"status": "ok"}
 
 
 def is_allowed_cors_origin(origin: str) -> bool:
@@ -98,6 +104,10 @@ async def add_process_time_header(request: Request, call_next):
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
+    # Skip rate limiting for health checks and auth endpoints for speed
+    path = request.url.path
+    if path in ("/health", "/", "/api/v1/health") or path.startswith("/api/v1/auth"):
+        return await call_next(request)
     from app.core.redis import redis_client
     if redis_client:
         client_ip = request.client.host
