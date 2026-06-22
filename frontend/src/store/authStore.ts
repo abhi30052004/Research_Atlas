@@ -29,37 +29,6 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       refreshToken: null,
       isAuthenticated: false,
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import { api } from '../api/client'
-
-interface User {
-  id: string
-  name: string
-  email: string
-  avatar?: string
-}
-
-interface AuthState {
-  user: User | null
-  token: string | null
-  refreshToken: string | null
-  isAuthenticated: boolean
-  login: (user: User, token: string, refreshToken?: string) => void
-  logout: () => void
-  loginApi: (credentials: any) => Promise<void>
-  registerApi: (userData: any) => Promise<void>
-  logoutApi: () => Promise<void>
-  refreshTokenApi: () => Promise<string | null>
-}
-
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      token: null,
-      refreshToken: null,
-      isAuthenticated: false,
       login: (user, token, refreshToken) =>
         set({ user, token, refreshToken: refreshToken || null, isAuthenticated: true }),
       logout: () =>
@@ -84,6 +53,20 @@ export const useAuthStore = create<AuthState>()(
 
       registerApi: async (userData) => {
         const { data } = await api.post('/auth/register', userData)
+        // Backend register returns tokens + user in one shot — no fallback needed
+        const u = data.user
+        set({
+          user: {
+            id: u.id,
+            name: u.full_name || u.username,
+            email: u.email,
+            avatar: u.avatar_url,
+          },
+          token: data.access_token,
+          refreshToken: data.refresh_token,
+          isAuthenticated: true,
+        })
+      },
 
       logoutApi: async () => {
         try {

@@ -37,7 +37,7 @@ export default function RegisterPage() {
         email: form.email,
         password: form.password
       })
-      setStatus('success')
+      // Navigate immediately — no delay
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')

@@ -30,7 +30,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
     
     try {
       await loginApi({ email, password })
-      setStatus('success')
+      // Navigate immediately — no delay
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
