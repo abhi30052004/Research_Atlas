@@ -1,14 +1,14 @@
-import { lazy, Suspense, type ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 import { ThemeProvider } from './components/ThemeProvider'
 
-const SplashVideo = lazy(() => import('./pages/auth/SplashVideo'))
-const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
-const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'))
-const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'))
-const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'))
-const WorkspacePage = lazy(() => import('./pages/workspace/WorkspacePage'))
+import SplashVideo from './pages/auth/SplashVideo'
+import LoginPage from './pages/auth/LoginPage'
+import RegisterPage from './pages/auth/RegisterPage'
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
+import DashboardPage from './pages/dashboard/DashboardPage'
+import WorkspacePage from './pages/workspace/WorkspacePage'
 
 const RouteFallback = () => (
   <div className="min-h-screen bg-surface flex items-center justify-center">
