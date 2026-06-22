@@ -84,7 +84,19 @@ export default function RegisterPage() {
         <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-[120px]" />
       </div>
 
-      <main className={mainClassName}>
+      <main 
+        className={mainClassName}
+        style={{
+          opacity: 0,
+          animation: 'fadeInUp 0.3s ease-out forwards'
+        }}
+      >
+        <style>{`
+          @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
         {/* Brand */}
         <div className="flex flex-col items-center mb-4">
           <div className="flex items-center gap-2.5 mb-2">
@@ -158,23 +170,6 @@ export default function RegisterPage() {
               </div>
               {errors.email && <p className="text-xs text-error">{errors.email}</p>}
             </div>
-
-            {/* Company (optional) */}
-            {/* <div className="space-y-1.5">
-              <label className={`text-xs font-mono font-medium uppercase tracking-wider block ${labelClassName}`}>
-                Company <span className="normal-case text-slate-400 font-mono">(optional)</span>
-              </label>
-              <div className="relative">
-                <Building2 className={fieldIconClass} />
-                <input
-                  type="text"
-                  value={form.company}
-                  onChange={set('company')}
-                  placeholder="Acme Corp"
-                  className={inputClassName}
-                />
-              </div>
-            </div> */}
 
             {/* Password */}
             <div className="space-y-1.5">

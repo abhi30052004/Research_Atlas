@@ -23,6 +23,7 @@ export interface Artifact {
   content: string
   createdAt: Date
   sourceCount: number
+  sourceIds?: string[]
 }
 
 export interface Chat {
@@ -36,7 +37,6 @@ export interface Chat {
 export const uploadSource = async (file: File, workspaceId: string) => {
   const formData = new FormData()
   formData.append('file', file)
-  
   const { data } = await api.post(`/sources/upload?workspace_id=${workspaceId}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })

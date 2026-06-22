@@ -505,6 +505,8 @@ export default function WorkspacePage() {
   // Editable — rich editor state
   const [editingArtifact, setEditingArtifact] = useState<Artifact | null>(null)
   const editorRef = useRef<HTMLDivElement>(null)
+  const [regeneratePrompt, setRegeneratePrompt] = useState('')
+  const [isEditorRegenerating, setIsEditorRegenerating] = useState(false)
 
   // Chat — copy & like feedback state
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -544,6 +546,7 @@ export default function WorkspacePage() {
             title: a.title || formatToolName(tool),
             createdAt: new Date(a.created_at || a.createdAt || new Date()),
             sourceCount: a.source_ids?.length || a.sourceCount || 0,
+            sourceIds: a.source_ids || [],
             content: normalizeArtifactContent(tool, a.content)
           }
         }))
@@ -858,6 +861,56 @@ export default function WorkspacePage() {
     }
   }
 
+  /* ---- Regenerate Artifact in Editor ---- */
+  const handleEditorRegenerate = async () => {
+    if (!editingArtifact || !workspaceId || isEditorRegenerating) return
+    
+    // Check AI limit
+    if (todayCount >= aiDailyLimit) {
+      addToast(`Daily AI limit reached (${aiDailyLimit}/${aiDailyLimit}). Increase your limit in Settings → AI Limits.`, 'warning')
+      return
+    }
+
+    if (!regeneratePrompt.trim()) {
+      addToast('Please describe what to regenerate.', 'warning')
+      return
+    }
+
+    setIsEditorRegenerating(true)
+    addToast('Regenerating artifact...', 'info')
+
+    try {
+      const toolObj = STUDIO_TOOLS.find(t => t.label === editingArtifact.tool || t.type === editingArtifact.tool)
+      const artifact_type = toolObj ? toolObj.type : 'summary'
+
+      const rawArtifact = await generateArtifact({
+        workspace_id: workspaceId,
+        artifact_type: artifact_type,
+        title: editingArtifact.title,
+        source_ids: editingArtifact.sourceIds || [],
+        custom_prompt: regeneratePrompt
+      })
+
+      const tool = rawArtifact.artifact_type || rawArtifact.tool || artifact_type
+      const newContent = normalizeArtifactContent(tool, rawArtifact.content)
+      
+      // Update editor content but don't save to the main artifacts list yet
+      if (editorRef.current) {
+        editorRef.current.innerHTML = newContent
+      }
+      setRegeneratePrompt('')
+      recordAICall('Regenerate Artifact')
+      addToast('Regeneration complete. Click Save Changes to apply.', 'success')
+
+    } catch (err: any) {
+      const message = err?.response?.data?.detail || 'Failed to regenerate artifact'
+      addToast(message, 'error')
+    } finally {
+      setIsEditorRegenerating(false)
+    }
+  }
+
+
   /* ---- Export helpers for Editable tab ---- */
   const exportAsPdf = () => {
     if (!editorRef.current || !editingArtifact) return
@@ -1084,7 +1137,8 @@ export default function WorkspacePage() {
         title: rawArtifact.title || formatToolName(tool),
         content: normalizeArtifactContent(tool, rawArtifact.content),
         createdAt: new Date(rawArtifact.created_at || rawArtifact.createdAt || new Date()),
-        sourceCount: rawArtifact.source_ids?.length || selectedReadySourceIds.length
+        sourceCount: rawArtifact.source_ids?.length || selectedReadySourceIds.length,
+        sourceIds: rawArtifact.source_ids || selectedReadySourceIds
       }
 
       setArtifacts((prev) => [newArtifact, ...prev])
@@ -1705,6 +1759,30 @@ export default function WorkspacePage() {
                     >
                       <Download className="w-3.5 h-3.5" /> DOCX
                     </button>
+
+                    <span className="w-px h-5 bg-outline-variant mx-1" />
+
+                    {/* Regenerate functionality */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={regeneratePrompt}
+                        onChange={(e) => setRegeneratePrompt(e.target.value)}
+                        placeholder="Describe what to regenerate..."
+                        className="w-64 px-3 py-1.5 bg-white border border-outline-variant rounded-lg text-xs focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all placeholder:text-outline"
+                      />
+                      <button
+                        onClick={handleEditorRegenerate}
+                        disabled={isEditorRegenerating || !regeneratePrompt.trim()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-outline-variant rounded-lg text-xs font-medium hover:bg-surface-container-high hover:text-on-surface transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isEditorRegenerating ? (
+                          <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Regenerating</>
+                        ) : (
+                          <><Sparkles className="w-3.5 h-3.5 text-secondary" /> Regenerate</>
+                        )}
+                      </button>
+                    </div>
 
                     <span className="w-px h-5 bg-outline-variant mx-1" />
 

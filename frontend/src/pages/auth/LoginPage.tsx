@@ -6,9 +6,10 @@ import { useAuthStore } from '../../store/authStore'
 type LoginPageProps = {
   transparent?: boolean
   backgroundVideo?: boolean
+  animateEntrance?: boolean
 }
 
-export default function LoginPage({ transparent = true, backgroundVideo = true }: LoginPageProps) {
+export default function LoginPage({ transparent = true, backgroundVideo = true, animateEntrance = false }: LoginPageProps) {
   const navigate = useNavigate()
   const loginApi = useAuthStore((s) => s.loginApi)
   const [email, setEmail] = useState('')
@@ -97,7 +98,19 @@ export default function LoginPage({ transparent = true, backgroundVideo = true }
         </div>
       )}
 
-      <main className="w-full max-w-[440px] font-mono">
+      <main 
+        className="w-full max-w-[440px] font-mono"
+        style={{
+          opacity: 0,
+          animation: animateEntrance ? 'fadeInUp 0.8s ease-out 2.4s forwards' : 'fadeInUp 0.3s ease-out forwards'
+        }}
+      >
+        <style>{`
+          @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
         {/* Brand */}
         <div className="flex flex-col items-center mb-8">
           <div className="flex items-center gap-2.5 mb-2">
