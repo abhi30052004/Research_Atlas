@@ -9,7 +9,8 @@ from app.core.config import settings
 def hash_password(password: str) -> str:
     # bcrypt has a 72-byte limit; truncate to be safe
     pwd_bytes = password.encode("utf-8")[:72]
-    salt = bcrypt.gensalt(rounds=12)
+    # Reduced rounds to 8 for lightning fast login/register speed
+    salt = bcrypt.gensalt(rounds=8)
     return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
