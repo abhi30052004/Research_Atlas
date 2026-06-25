@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
-import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -17,16 +17,12 @@ export const analytics = typeof window !== "undefined" ? getAnalytics(app) : nul
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export const signInWithGoogleRedirect = async () => {
-  await signInWithRedirect(auth, googleProvider);
-};
-
-export const getGoogleRedirectUser = async () => {
+export const signInWithGoogle = async () => {
   try {
-    const result = await getRedirectResult(auth);
-    return result?.user ?? null;
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
   } catch (error) {
-    console.error("Google redirect sign-in error:", error);
+    console.error("Google Sign-In Error:", error);
     throw error;
   }
 };

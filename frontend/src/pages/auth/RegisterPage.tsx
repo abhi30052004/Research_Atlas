@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Mail, KeyRound, User, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
-import { signInWithGoogleRedirect, getGoogleRedirectUser } from '../../lib/firebase'
+import { signInWithGoogle } from '../../lib/firebase'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
@@ -13,23 +13,6 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
   const [errors, setErrors] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    const completeRedirectSignIn = async () => {
-      try {
-        const user = await getGoogleRedirectUser()
-        if (!user) return
-        setStatus('loading')
-        const token = await user.getIdToken()
-        await googleLoginApi(token)
-        navigate('/dashboard', { replace: true })
-      } catch (err: any) {
-        setStatus('idle')
-        setErrors({ global: err.response?.data?.detail || err.message || 'Failed to sign in with Google.' })
-      }
-    }
-    completeRedirectSignIn()
-  }, [googleLoginApi, navigate])
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -68,7 +51,10 @@ export default function RegisterPage() {
     setStatus('loading')
 
     try {
-      await signInWithGoogleRedirect()
+      const user = await signInWithGoogle()
+      const token = await user.getIdToken()
+      await googleLoginApi(token)
+      navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
       setErrors({ global: err.response?.data?.detail || err.message || 'Failed to sign in with Google.' })
