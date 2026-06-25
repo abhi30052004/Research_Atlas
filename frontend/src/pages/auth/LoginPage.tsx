@@ -1,8 +1,8 @@
-import { useRef, useState, FormEvent } from 'react'
+import { useRef, useState, FormEvent, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Mail, KeyRound, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
-import { signInWithGoogle } from '../../lib/firebase'
+import { signInWithGoogleRedirect, getGoogleRedirectUser } from '../../lib/firebase'
 
 type LoginPageProps = {
   transparent?: boolean
@@ -20,6 +20,23 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
   const [error, setError] = useState('')
   const isSubmittingRef = useRef(false)
+
+  useEffect(() => {
+    const completeRedirectSignIn = async () => {
+      try {
+        const user = await getGoogleRedirectUser()
+        if (!user) return
+        setStatus('loading')
+        const token = await user.getIdToken()
+        await googleLoginApi(token)
+        navigate('/dashboard', { replace: true })
+      } catch (err: any) {
+        setStatus('idle')
+        setError(err.response?.data?.detail || err.message || 'Failed to sign in with Google.')
+      }
+    }
+    completeRedirectSignIn()
+  }, [googleLoginApi, navigate])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -48,10 +65,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
     setStatus('loading')
 
     try {
-      const user = await signInWithGoogle()
-      const token = await user.getIdToken()
-      await googleLoginApi(token)
-      navigate('/dashboard', { replace: true })
+      await signInWithGoogleRedirect()
     } catch (err: any) {
       setStatus('idle')
       setError(err.response?.data?.detail || err.message || 'Failed to sign in with Google.')
