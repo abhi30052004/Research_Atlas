@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     ]
     CORS_ORIGIN_REGEX: str = r"^https://atlas-[a-z0-9-]+-abhibhunia68-2333s-projects\.vercel\.app$"
     FRONTEND_URL: str = "https://atlas-swart-kappa-13.vercel.app"
+    FIREBASE_PROJECT_ID: str = ""
 
     CHUNK_SIZE: int = 2200
     CHUNK_OVERLAP: int = 100

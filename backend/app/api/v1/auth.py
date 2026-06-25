@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from app.schemas.auth import (
     RegisterRequest,
     LoginRequest,
+    GoogleAuthRequest,
     TokenResponse,
     RefreshRequest,
     ForgotPasswordRequest,
@@ -24,6 +25,11 @@ async def register(data: RegisterRequest):
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest):
     return await auth_service.login(data)
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(data: GoogleAuthRequest):
+    return await auth_service.google_login(data.id_token)
 
 
 @router.post("/refresh", response_model=TokenResponse)

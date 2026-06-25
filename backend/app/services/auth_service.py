@@ -3,7 +3,9 @@ from typing import Optional
 from bson import ObjectId
 import asyncio
 import inspect
+import re
 import jwt
+import requests
 
 from app.core.database import get_db
 from app.core.security import (
@@ -22,6 +24,8 @@ from fastapi import HTTPException, status
 
 
 class AuthService:
+    FIREBASE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+
     async def _maybe_await(self, value):
         if inspect.isawaitable(value):
             return await value
@@ -84,12 +88,70 @@ class AuthService:
         await db.users.insert_one(user_doc)
         return await self._issue_tokens(db, user_doc)
 
+    def _normalize_username(self, value: str) -> str:
+        cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", value).strip("_").lower()
+        if len(cleaned) < 3:
+            cleaned = f"user_{cleaned}" if cleaned else "user"
+        return cleaned[:30]
+
+    async def _unique_username(self, db, preferred: str) -> str:
+        base = self._normalize_username(preferred)
+        username = base
+        attempt = 0
+        while await db.users.find_one({"username": username}):
+            attempt += 1
+            suffix = f"_{attempt}"
+            max_base_len = 30 - len(suffix)
+            username = f"{base[:max_base_len]}{suffix}"
+        return username
+
+    def _verify_firebase_id_token(self, id_token: str) -> dict:
+        project_id = settings.FIREBASE_PROJECT_ID
+        if not project_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Firebase project is not configured on the server",
+            )
+
+        try:
+            header = jwt.get_unverified_header(id_token)
+            kid = header.get("kid")
+            if not kid:
+                raise HTTPException(status_code=401, detail="Invalid Firebase token header")
+
+            certs_resp = requests.get(self.FIREBASE_CERTS_URL, timeout=10)
+            certs_resp.raise_for_status()
+            certs = certs_resp.json()
+            cert = certs.get(kid)
+            if not cert:
+                raise HTTPException(status_code=401, detail="Firebase key id not recognized")
+
+            issuer = f"https://securetoken.google.com/{project_id}"
+            payload = jwt.decode(
+                id_token,
+                cert,
+                algorithms=["RS256"],
+                audience=project_id,
+                issuer=issuer,
+            )
+            if not payload.get("sub"):
+                raise HTTPException(status_code=401, detail="Invalid Firebase token subject")
+            return payload
+        except HTTPException:
+            raise
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Firebase token expired")
+        except jwt.PyJWTError:
+            raise HTTPException(status_code=401, detail="Invalid Firebase token")
+        except requests.RequestException:
+            raise HTTPException(status_code=503, detail="Unable to verify Firebase token")
+
     async def login(self, data: LoginRequest) -> TokenResponse:
         db = get_db()
         user = await db.users.find_one({"email": data.email})
         password_ok = (
             await asyncio.to_thread(verify_password, data.password, user["hashed_password"])
-            if user
+            if user and user.get("hashed_password")
             else False
         )
         if not user or not password_ok:
@@ -97,6 +159,58 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
             )
+        if not user.get("is_active"):
+            raise HTTPException(status_code=403, detail="Account is disabled")
+
+        return await self._issue_tokens(db, user)
+
+    async def google_login(self, id_token: str) -> TokenResponse:
+        db = get_db()
+        payload = await asyncio.to_thread(self._verify_firebase_id_token, id_token)
+
+        email = (payload.get("email") or "").strip().lower()
+        if not email:
+            raise HTTPException(status_code=400, detail="Google account email is required")
+
+        full_name = payload.get("name")
+        avatar_url = payload.get("picture")
+        is_verified = bool(payload.get("email_verified"))
+        firebase_uid = payload.get("sub")
+
+        user = await db.users.find_one({"email": email})
+        now = datetime.now(timezone.utc)
+
+        if user:
+            update_fields = {
+                "updated_at": now,
+                "is_verified": user.get("is_verified", False) or is_verified,
+                "firebase_uid": firebase_uid,
+            }
+            if full_name and not user.get("full_name"):
+                update_fields["full_name"] = full_name
+            if avatar_url and not user.get("avatar_url"):
+                update_fields["avatar_url"] = avatar_url
+
+            await db.users.update_one({"_id": user["_id"]}, {"$set": update_fields})
+            user = await db.users.find_one({"_id": user["_id"]})
+        else:
+            preferred_username = email.split("@", 1)[0]
+            username = await self._unique_username(db, preferred_username)
+            user = {
+                "_id": str(ObjectId()),
+                "email": email,
+                "username": username,
+                "hashed_password": None,
+                "full_name": full_name,
+                "is_active": True,
+                "is_verified": is_verified,
+                "avatar_url": avatar_url,
+                "firebase_uid": firebase_uid,
+                "created_at": now,
+                "updated_at": now,
+            }
+            await db.users.insert_one(user)
+
         if not user.get("is_active"):
             raise HTTPException(status_code=403, detail="Account is disabled")
 

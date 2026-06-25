@@ -6,7 +6,7 @@ import { signInWithGoogle } from '../../lib/firebase'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
-  const { registerApi, login } = useAuthStore((s) => ({ registerApi: s.registerApi, login: s.login }))
+  const { registerApi, googleLoginApi } = useAuthStore((s) => ({ registerApi: s.registerApi, googleLoginApi: s.googleLoginApi }))
 
   const [form, setForm] = useState({ name: '', username: '', email: '', company: '', password: '', confirm: '' })
   const [showPw, setShowPw] = useState(false)
@@ -53,15 +53,7 @@ export default function RegisterPage() {
     try {
       const user = await signInWithGoogle()
       const token = await user.getIdToken()
-      login(
-        {
-          id: user.uid,
-          name: user.displayName || 'Google User',
-          email: user.email || '',
-          avatar: user.photoURL || undefined
-        },
-        token
-      )
+      await googleLoginApi(token)
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')

@@ -17,6 +17,7 @@ interface AuthState {
   login: (user: User, token: string, refreshToken?: string) => void
   logout: () => void
   loginApi: (credentials: any) => Promise<void>
+  googleLoginApi: (idToken: string) => Promise<void>
   registerApi: (userData: any) => Promise<void>
   logoutApi: () => Promise<void>
   refreshTokenApi: () => Promise<string | null>
@@ -37,6 +38,22 @@ export const useAuthStore = create<AuthState>()(
       loginApi: async (credentials) => {
         const { data } = await api.post('/auth/login', credentials)
         // Backend always returns user inline — no /auth/me round-trip needed
+        const u = data.user
+        set({
+          user: {
+            id: u.id,
+            name: u.full_name || u.username,
+            email: u.email,
+            avatar: u.avatar_url,
+          },
+          token: data.access_token,
+          refreshToken: data.refresh_token,
+          isAuthenticated: true,
+        })
+      },
+
+      googleLoginApi: async (idToken) => {
+        const { data } = await api.post('/auth/google', { id_token: idToken })
         const u = data.user
         set({
           user: {

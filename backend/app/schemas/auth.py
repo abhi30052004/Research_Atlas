@@ -33,6 +33,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 

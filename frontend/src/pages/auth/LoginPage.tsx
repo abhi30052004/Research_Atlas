@@ -12,7 +12,7 @@ type LoginPageProps = {
 
 export default function LoginPage({ transparent = true, backgroundVideo = true, animateEntrance = false }: LoginPageProps) {
   const navigate = useNavigate()
-  const { loginApi, login } = useAuthStore((s) => ({ loginApi: s.loginApi, login: s.login }))
+  const { loginApi, googleLoginApi } = useAuthStore((s) => ({ loginApi: s.loginApi, googleLoginApi: s.googleLoginApi }))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
@@ -50,15 +50,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
     try {
       const user = await signInWithGoogle()
       const token = await user.getIdToken()
-      login(
-        {
-          id: user.uid,
-          name: user.displayName || 'Google User',
-          email: user.email || '',
-          avatar: user.photoURL || undefined
-        },
-        token
-      )
+      await googleLoginApi(token)
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
