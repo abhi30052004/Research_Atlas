@@ -57,7 +57,7 @@ export default function RegisterPage() {
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
-      setErrors({ global: err.message || 'Failed to sign in with Google.' })
+      setErrors({ global: err.response?.data?.detail || err.message || 'Failed to sign in with Google.' })
     }
   }
 

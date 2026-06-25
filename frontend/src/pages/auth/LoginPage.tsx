@@ -54,7 +54,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
-      setError(err.message || 'Failed to sign in with Google.')
+      setError(err.response?.data?.detail || err.message || 'Failed to sign in with Google.')
     } finally {
       isSubmittingRef.current = false
     }
