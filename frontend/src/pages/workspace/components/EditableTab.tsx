@@ -8,10 +8,14 @@ import { Artifact } from '../../../api/workspace'
 import {
   getTool,
   getToolIcon,
+  normalizeInfographicContent,
   normalizeSlideDeckContent,
+  renderInfographicHtml,
   renderSlideDeckDocument,
+  InfographicDocument,
   SlideDeckDocument
 } from '../utils'
+import { InfographicCanvasEditor } from './InfographicCanvasEditor'
 
 interface EditableTabProps {
   editingArtifact: Artifact | null
@@ -45,26 +49,48 @@ export function EditableTab({
   const isSlideDeckArtifact = Boolean(
     editingArtifact && ((getTool(editingArtifact.tool)?.type || editingArtifact.tool) === 'slide_deck')
   )
+  const isInfographicArtifact = Boolean(
+    editingArtifact && ((getTool(editingArtifact.tool)?.type || editingArtifact.tool) === 'infographic_content')
+  )
 
   const [slideDeckDoc, setSlideDeckDoc] = useState<SlideDeckDocument | null>(null)
+  const [infographicDoc, setInfographicDoc] = useState<InfographicDocument | null>(null)
   const renderedSlideDeckHtml = useMemo(
     () => (slideDeckDoc ? renderSlideDeckDocument(slideDeckDoc) : ''),
     [slideDeckDoc]
+  )
+  const renderedInfographicHtml = useMemo(
+    () => (infographicDoc ? renderInfographicHtml(infographicDoc) : ''),
+    [infographicDoc]
   )
 
   useEffect(() => {
     if (!editingArtifact || !isSlideDeckArtifact) {
       setSlideDeckDoc(null)
-      return
+    } else {
+      const parsed = normalizeSlideDeckContent(editingArtifact.structuredContent ?? editingArtifact.content)
+      setSlideDeckDoc(parsed)
     }
-    const parsed = normalizeSlideDeckContent(editingArtifact.structuredContent ?? editingArtifact.content)
-    setSlideDeckDoc(parsed)
   }, [editingArtifact, isSlideDeckArtifact])
+
+  useEffect(() => {
+    if (!editingArtifact || !isInfographicArtifact) {
+      setInfographicDoc(null)
+    } else {
+      const parsed = normalizeInfographicContent(editingArtifact.structuredContent ?? editingArtifact.content)
+      setInfographicDoc(parsed)
+    }
+  }, [editingArtifact, isInfographicArtifact])
 
   useEffect(() => {
     if (!isSlideDeckArtifact || !editorRef.current || !renderedSlideDeckHtml) return
     editorRef.current.innerHTML = renderedSlideDeckHtml
   }, [isSlideDeckArtifact, renderedSlideDeckHtml, editorRef])
+
+  useEffect(() => {
+    if (!isInfographicArtifact || !editorRef.current || !renderedInfographicHtml) return
+    editorRef.current.innerHTML = renderedInfographicHtml
+  }, [isInfographicArtifact, renderedInfographicHtml, editorRef])
 
   const updateSlide = (index: number, updates: Record<string, unknown>) => {
     setSlideDeckDoc((prev) => {
@@ -91,6 +117,18 @@ export function EditableTab({
       return
     }
 
+    if (isInfographicArtifact && infographicDoc) {
+      const updatedHtml = renderInfographicHtml(infographicDoc)
+      if (editorRef.current) editorRef.current.innerHTML = updatedHtml
+      setArtifacts((prev) =>
+        prev.map((a) => (a.id === editingArtifact.id
+          ? { ...a, content: updatedHtml, structuredContent: infographicDoc }
+          : a))
+      )
+      setEditingArtifact({ ...editingArtifact, content: updatedHtml, structuredContent: infographicDoc })
+      return
+    }
+
     if (editorRef.current) {
       const updated = editorRef.current.innerHTML
       setArtifacts((prev) =>
@@ -106,7 +144,7 @@ export function EditableTab({
         <>
           {/* Toolbar */}
           <div className="flex items-center gap-1 px-6 py-2.5 border-b border-outline-variant bg-surface-container-lowest flex-shrink-0 flex-wrap">
-            {!isSlideDeckArtifact && (
+            {!isSlideDeckArtifact && !isInfographicArtifact && (
               <>
                 {/* Undo / Redo */}
                 <button onClick={() => execCmd('undo')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Undo">
@@ -297,6 +335,12 @@ export function EditableTab({
                     </section>
                   ))}
                 </div>
+              ) : isInfographicArtifact && infographicDoc ? (
+                <InfographicCanvasEditor
+                  document={infographicDoc}
+                  onChange={setInfographicDoc}
+                  onSave={() => saveChanges()}
+                />
               ) : (
                 <div
                   ref={editorRef}
@@ -313,7 +357,7 @@ export function EditableTab({
                   dangerouslySetInnerHTML={{ __html: editingArtifact.content }}
                 />
               )}
-              {isSlideDeckArtifact && (
+              {(isSlideDeckArtifact || isInfographicArtifact) && (
                 <div ref={editorRef} className="hidden" aria-hidden="true" />
               )}
             </div>

@@ -32,7 +32,8 @@ import {
   getTool,
   formatToolName,
   normalizeArtifactContent,
-  normalizeSlideDeckContent
+  normalizeSlideDeckContent,
+  normalizeInfographicContent
 } from './utils'
 
 // Imported Components
@@ -80,9 +81,10 @@ export default function WorkspacePage() {
 
   const hydrateArtifact = useCallback((artifact: any, fallbackSourceIds: string[] = []): Artifact => {
     const tool = artifact.artifact_type || artifact.tool
-    const slideDeckDoc = (getTool(tool)?.type || tool) === 'slide_deck'
-      ? normalizeSlideDeckContent(artifact.content)
-      : null
+    const toolType = getTool(tool)?.type || tool
+    const slideDeckDoc = toolType === 'slide_deck' ? normalizeSlideDeckContent(artifact.content) : null
+    const infographicDoc = toolType === 'infographic_content' ? normalizeInfographicContent(artifact.content) : null
+    const structuredContent = slideDeckDoc || infographicDoc || undefined
     return {
       ...artifact,
       id: artifact.id || artifact._id,
@@ -91,8 +93,8 @@ export default function WorkspacePage() {
       createdAt: new Date(artifact.created_at || artifact.createdAt || new Date()),
       sourceCount: artifact.source_ids?.length || artifact.sourceCount || fallbackSourceIds.length,
       sourceIds: artifact.source_ids || fallbackSourceIds,
-      structuredContent: slideDeckDoc || undefined,
-      content: slideDeckDoc ? normalizeArtifactContent(tool, slideDeckDoc) : normalizeArtifactContent(tool, artifact.content)
+      structuredContent,
+      content: structuredContent ? normalizeArtifactContent(tool, structuredContent) : normalizeArtifactContent(tool, artifact.content)
     }
   }, [])
 
