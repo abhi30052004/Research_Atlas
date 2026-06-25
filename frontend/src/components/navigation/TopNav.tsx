@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Bell,
@@ -6,6 +6,7 @@ import {
   Search,
   LogOut,
   X,
+  Menu,
   User,
   Zap,
   Sun,
@@ -86,6 +87,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
   } = useUIStore()
 
   // Dropdowns
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -146,6 +148,20 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Close mobile menu on route change / resize
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), [])
+  useEffect(() => {
+    const onResize = () => { if (window.innerWidth >= 768) closeMobileMenu() }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [closeMobileMenu])
+
+  // Prevent body scroll when mobile menu is open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [mobileMenuOpen])
+
   // Init edit profile fields
   const openEditProfile = () => {
     setEditName(user?.name || '')
@@ -201,16 +217,25 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
   return (
     <>
       <header className="bg-surface-container-lowest border-b border-outline-variant fixed top-0 w-full z-50 h-14">
-        <div className="flex items-center justify-between w-full px-6 h-full max-w-[1400px] mx-auto">
-          {/* Logo + Nav */}
-          <div className="flex items-center gap-8">
+        <div className="flex items-center justify-between w-full px-3 sm:px-6 h-full max-w-[1400px] mx-auto">
+          {/* Mobile menu button + Logo + Nav */}
+          <div className="flex items-center gap-3 sm:gap-8">
+            {/* Hamburger - mobile only */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 -ml-1 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-colors"
+              aria-label="Toggle menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
             <Link to="/dashboard" className="flex items-center gap-2">
               <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center">
                 <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </div>
-              <span className="font-bold text-on-surface tracking-tight">Atlas</span>
+              <span className="font-bold text-on-surface tracking-tight hidden sm:inline">Atlas</span>
             </Link>
             <nav className="hidden md:flex items-center gap-1">
               <Link to={studioHref} className={`px-3 py-1.5 text-sm font-medium rounded transition-colors ${activeTab === 'studio' ? 'text-primary border-b-2 border-primary rounded-none pb-[13px]' : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'}`}>
@@ -223,7 +248,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
           </div>
 
           {/* Search */}
-          <div className="flex-1 max-w-sm mx-8 hidden sm:block">
+          <div className="flex-1 max-w-sm mx-4 lg:mx-8 hidden sm:block">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
               <input type="text" placeholder="Search workspace..." className="w-full pl-9 pr-4 py-1.5 bg-surface-container-low border border-outline-variant rounded-lg text-sm focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all placeholder:text-outline" />
@@ -231,7 +256,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 sm:gap-1">
 
             {/* ═══ Notification Bell ═══ */}
             <div className="relative" ref={notifRef}>
@@ -246,9 +271,9 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
               </button>
 
               {notifOpen && (
-                <div className="absolute right-0 top-11 w-96 bg-white rounded-xl shadow-xl border border-outline-variant overflow-hidden z-50" style={{ animation: 'fadeIn 0.2s ease-out' }}>
+                <div className="fixed inset-x-0 top-14 mx-2 sm:absolute sm:inset-auto sm:right-0 sm:top-11 sm:mx-0 w-auto sm:w-96 bg-white rounded-xl shadow-xl border border-outline-variant overflow-hidden z-50" style={{ animation: 'fadeIn 0.2s ease-out' }}>
                   {/* Header */}
-                  <div className="flex items-center justify-between px-5 py-3 border-b border-outline-variant">
+                  <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-outline-variant">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-on-surface">Notifications</h3>
                       {unreadCount > 0 && (
@@ -266,7 +291,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
                   </div>
 
                   {/* Notification list */}
-                  <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                  <div className="max-h-[60vh] sm:max-h-80 overflow-y-auto custom-scrollbar">
                     {notifications.length === 0 ? (
                       <div className="py-10 text-center">
                         <Bell className="w-6 h-6 text-outline mx-auto mb-2" />
@@ -277,7 +302,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
                         <div
                           key={n.id}
                           onClick={() => markNotificationRead(n.id)}
-                          className={`flex items-start gap-3 px-5 py-3 border-b border-outline-variant last:border-b-0 cursor-pointer hover:bg-surface-container-low transition-colors ${!n.read ? 'bg-secondary/[0.03]' : ''}`}
+                          className={`flex items-start gap-3 px-4 sm:px-5 py-3 border-b border-outline-variant last:border-b-0 cursor-pointer hover:bg-surface-container-low transition-colors ${!n.read ? 'bg-secondary/[0.03]' : ''}`}
                         >
                           <NotifIcon type={n.icon} />
                           <div className="flex-1 min-w-0">
@@ -300,13 +325,13 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
               )}
             </div>
 
-            {/* Settings */}
-            <button onClick={() => setSettingsOpen(true)} className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-colors">
+            {/* Settings - hide on very small screens, accessible via mobile menu */}
+            <button onClick={() => setSettingsOpen(true)} className="hidden sm:block p-2 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-colors">
               <Settings className="w-4 h-4" />
             </button>
 
             {/* ═══ Profile Avatar + Dropdown ═══ */}
-            <div className="relative ml-1" ref={profileRef}>
+            <div className="relative ml-0.5 sm:ml-1" ref={profileRef}>
               <button
                 onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false) }}
                 className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-white text-xs font-semibold hover:ring-2 hover:ring-secondary/30 transition-all"
@@ -315,9 +340,9 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
               </button>
 
               {profileOpen && (
-                <div className="absolute right-0 top-11 w-80 bg-white rounded-xl shadow-xl border border-outline-variant overflow-hidden z-50" style={{ animation: 'fadeIn 0.2s ease-out' }}>
+                <div className="fixed right-2 left-2 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-80 bg-white rounded-xl shadow-xl border border-outline-variant overflow-hidden z-50" style={{ animation: 'fadeIn 0.2s ease-out' }}>
                   {/* User info */}
-                  <div className="flex items-center gap-3 px-5 py-4 border-b border-outline-variant">
+                  <div className="flex items-center gap-3 px-4 sm:px-5 py-4 border-b border-outline-variant">
                     <div className="w-11 h-11 rounded-full bg-secondary flex items-center justify-center text-white text-base font-bold flex-shrink-0">{initials}</div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-on-surface truncate">{displayName}</p>
@@ -326,7 +351,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
                   </div>
 
                   {/* AI Usage */}
-                  <div className="px-5 py-3 border-b border-outline-variant">
+                  <div className="px-4 sm:px-5 py-3 border-b border-outline-variant">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="flex items-center gap-1.5 text-xs font-medium text-on-surface-variant">
                         <Bot className="w-3.5 h-3.5" /> OpenAI calls today
@@ -348,12 +373,12 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
 
                   {/* Menu */}
                   <div className="py-2">
-                    <button onClick={openEditProfile} className="w-full flex items-center gap-3 px-5 py-2.5 text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
+                    <button onClick={openEditProfile} className="w-full flex items-center gap-3 px-4 sm:px-5 py-2.5 text-sm text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors">
                       <User className="w-4 h-4" /> Edit profile
                     </button>
                   </div>
                   <div className="border-t border-outline-variant py-2">
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-5 py-2.5 text-sm text-on-surface-variant hover:bg-red-50 hover:text-error transition-colors">
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 sm:px-5 py-2.5 text-sm text-on-surface-variant hover:bg-red-50 hover:text-error transition-colors">
                       <LogOut className="w-4 h-4" /> Sign out
                     </button>
                   </div>
@@ -363,6 +388,86 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
           </div>
         </div>
       </header>
+
+      {/* ═══════════ Mobile Menu Drawer ═══════════ */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[90] md:hidden">
+          {/* Overlay */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeMobileMenu} />
+          {/* Drawer */}
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface-container-lowest shadow-2xl flex flex-col" style={{ animation: 'slideInLeft 0.25s ease-out' }}>
+            <style>{`
+              @keyframes slideInLeft {
+                from { transform: translateX(-100%); }
+                to { transform: translateX(0); }
+              }
+            `}</style>
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 bg-primary rounded-md flex items-center justify-center">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </div>
+                <span className="font-bold text-on-surface tracking-tight">Atlas</span>
+              </div>
+              <button onClick={closeMobileMenu} className="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-lg transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mobile search */}
+            <div className="px-4 py-3 border-b border-outline-variant sm:hidden">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
+                <input type="text" placeholder="Search workspace..." className="w-full pl-9 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-sm focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all placeholder:text-outline" />
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
+              <Link
+                to={studioHref}
+                onClick={closeMobileMenu}
+                className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'studio' ? 'bg-secondary/10 text-secondary' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'}`}
+              >
+                <Zap className="w-4 h-4" />
+                Studio
+              </Link>
+              <Link
+                to="/dashboard"
+                onClick={closeMobileMenu}
+                className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-secondary/10 text-secondary' : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'}`}
+              >
+                <Layers className="w-4 h-4" />
+                Dashboard
+              </Link>
+
+              <div className="my-3 h-px bg-outline-variant" />
+
+              <button
+                onClick={() => { closeMobileMenu(); setSettingsOpen(true) }}
+                className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                Settings
+              </button>
+            </nav>
+
+            {/* User info at bottom */}
+            <div className="border-t border-outline-variant px-4 py-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-white text-xs font-bold flex-shrink-0">{initials}</div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-on-surface truncate">{displayName}</p>
+                  <p className="text-xs text-on-surface-variant truncate">{displayEmail}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════ Edit Profile Modal ═══════════ */}
       {editProfileOpen && (
@@ -496,16 +601,16 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
 
       {/* ═══════════ Settings Modal ═══════════ */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setSettingsOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl border border-outline-variant w-full max-w-2xl max-h-[80vh] flex overflow-hidden" style={{ animation: 'fadeIn 0.2s ease-out' }}>
-            {/* Sidebar */}
-            <div className="w-48 bg-surface-container-low border-r border-outline-variant py-6 px-3 flex-shrink-0">
-              <div className="flex items-center gap-2 px-3 mb-6">
+          <div className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-outline-variant w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[80vh] flex flex-col sm:flex-row overflow-hidden" style={{ animation: 'fadeIn 0.2s ease-out' }}>
+            {/* Sidebar / Mobile tabs */}
+            <div className="sm:w-48 bg-surface-container-low sm:border-r border-b sm:border-b-0 border-outline-variant sm:py-6 px-3 flex-shrink-0">
+              <div className="hidden sm:flex items-center gap-2 px-3 mb-6">
                 <Settings className="w-4 h-4 text-on-surface" />
                 <h2 className="text-sm font-bold text-on-surface">Settings</h2>
               </div>
-              <nav className="space-y-0.5">
+              <nav className="flex sm:flex-col gap-0.5 overflow-x-auto no-scrollbar py-2 sm:py-0">
                 {([
                   { id: 'appearance' as SettingsTab, icon: <Sun className="w-4 h-4" />, label: 'Appearance' },
                   { id: 'notifications' as SettingsTab, icon: <BellRing className="w-4 h-4" />, label: 'Notifications' },
@@ -515,7 +620,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
                   <button
                     key={item.id}
                     onClick={() => setSettingsTab(item.id)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${settingsTab === item.id ? 'bg-secondary/10 text-secondary' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
+                    className={`flex-shrink-0 sm:w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${settingsTab === item.id ? 'bg-secondary/10 text-secondary' : 'text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface'
                       }`}
                   >
                     <span className={settingsTab === item.id ? 'text-secondary' : 'text-outline'}>{item.icon}</span>
@@ -531,7 +636,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
                 <X className="w-4 h-4" />
               </button>
 
-              <div className="flex-1 overflow-y-auto px-8 py-8">
+              <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-8">
                 {/* ─── Appearance ─── */}
                 {settingsTab === 'appearance' && (
                   <div>
@@ -642,7 +747,7 @@ export default function TopNav({ activeTab = 'dashboard' }: TopNavProps) {
                 )}
               </div>
 
-              <div className="px-8 py-4 border-t border-outline-variant flex justify-end flex-shrink-0">
+              <div className="px-4 sm:px-8 py-4 border-t border-outline-variant flex justify-end flex-shrink-0">
                 <button onClick={() => setSettingsOpen(false)} className="px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors">
                   Save changes
                 </button>
@@ -700,7 +805,7 @@ function ToastContainer() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-2.5" style={{ maxWidth: '380px' }}>
+    <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:right-6 sm:bottom-6 z-[200] flex flex-col gap-2.5" style={{ maxWidth: '380px' }}>
       {toasts.map((t) => (
         <div
           key={t.id}

@@ -2,6 +2,7 @@ import { useRef, useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Mail, KeyRound, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
+import { signInWithGoogle } from '../../lib/firebase'
 
 type LoginPageProps = {
   transparent?: boolean
@@ -11,7 +12,7 @@ type LoginPageProps = {
 
 export default function LoginPage({ transparent = true, backgroundVideo = true, animateEntrance = false }: LoginPageProps) {
   const navigate = useNavigate()
-  const loginApi = useAuthStore((s) => s.loginApi)
+  const { loginApi, login } = useAuthStore((s) => ({ loginApi: s.loginApi, login: s.login }))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
@@ -35,6 +36,33 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
     } catch (err: any) {
       setStatus('idle')
       setError(err.response?.data?.detail || 'Invalid email or password.')
+    } finally {
+      isSubmittingRef.current = false
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    if (isSubmittingRef.current) return
+    setError('')
+    isSubmittingRef.current = true
+    setStatus('loading')
+
+    try {
+      const user = await signInWithGoogle()
+      const token = await user.getIdToken()
+      login(
+        {
+          id: user.uid,
+          name: user.displayName || 'Google User',
+          email: user.email || '',
+          avatar: user.photoURL || undefined
+        },
+        token
+      )
+      navigate('/dashboard', { replace: true })
+    } catch (err: any) {
+      setStatus('idle')
+      setError(err.message || 'Failed to sign in with Google.')
     } finally {
       isSubmittingRef.current = false
     }
@@ -161,7 +189,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
 
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
-                <label className={`text-xs font-mono font-medium uppercase tracking-wider ${labelClassName}`} htmlFor="password">
+                <label className={`text-xs font-mono font-medium uppercase tracking-wider 0${labelClassName}`} htmlFor="password">
                   Password
                 </label>
                 <Link to="/forgot-password" className={linkClassName}>
@@ -220,7 +248,12 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
             <div className={dividerClassName} />
           </div>
 
-          <button className={googleButtonClassName}>
+          <button 
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={status === 'loading'}
+            className={googleButtonClassName}
+          >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
