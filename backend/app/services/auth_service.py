@@ -5,7 +5,6 @@ import asyncio
 import inspect
 import re
 import jwt
-import requests
 
 from app.core.database import get_db
 from app.core.security import (
@@ -24,7 +23,7 @@ from fastapi import HTTPException, status
 
 
 class AuthService:
-    FIREBASE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+    FIREBASE_JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
 
     async def _maybe_await(self, value):
         if inspect.isawaitable(value):
@@ -119,20 +118,16 @@ class AuthService:
             if not kid:
                 raise HTTPException(status_code=401, detail="Invalid Firebase token header")
 
-            certs_resp = requests.get(self.FIREBASE_CERTS_URL, timeout=10)
-            certs_resp.raise_for_status()
-            certs = certs_resp.json()
-            cert = certs.get(kid)
-            if not cert:
-                raise HTTPException(status_code=401, detail="Firebase key id not recognized")
-
             issuer = f"https://securetoken.google.com/{project_id}"
+            jwk_client = jwt.PyJWKClient(self.FIREBASE_JWKS_URL)
+            signing_key = jwk_client.get_signing_key_from_jwt(id_token)
             payload = jwt.decode(
                 id_token,
-                cert,
+                signing_key.key,
                 algorithms=["RS256"],
                 audience=project_id,
                 issuer=issuer,
+                leeway=60,
             )
             if not payload.get("sub"):
                 raise HTTPException(status_code=401, detail="Invalid Firebase token subject")
@@ -141,10 +136,14 @@ class AuthService:
             raise
         except jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Firebase token expired")
+        except jwt.InvalidAudienceError:
+            raise HTTPException(status_code=401, detail="Firebase token audience mismatch")
+        except jwt.InvalidIssuerError:
+            raise HTTPException(status_code=401, detail="Firebase token issuer mismatch")
+        except jwt.PyJWKClientError:
+            raise HTTPException(status_code=503, detail="Unable to fetch Firebase signing keys")
         except jwt.PyJWTError:
             raise HTTPException(status_code=401, detail="Invalid Firebase token")
-        except requests.RequestException:
-            raise HTTPException(status_code=503, detail="Unable to verify Firebase token")
 
     async def login(self, data: LoginRequest) -> TokenResponse:
         db = get_db()
