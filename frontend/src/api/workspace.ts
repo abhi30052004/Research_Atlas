@@ -21,6 +21,7 @@ export interface Artifact {
   tool: string
   title: string
   content: string
+  structuredContent?: unknown
   createdAt: Date
   sourceCount: number
   sourceIds?: string[]

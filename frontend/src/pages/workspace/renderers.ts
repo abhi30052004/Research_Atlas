@@ -10,6 +10,7 @@ export function renderSlideDeckHtml(slides: any[]) {
             <div class="flex-1 min-w-0">
               <p class="text-[11px] font-semibold uppercase text-violet-700">${escapeHtml(slide.slide_type || 'slide')}</p>
               <h3 class="text-lg font-bold text-on-surface mt-1">${escapeHtml(slide.title || `Slide ${index + 1}`)}</h3>
+              ${slide.subtitle ? `<p class="text-sm text-on-surface-variant mt-1">${escapeHtml(slide.subtitle)}</p>` : ''}
             </div>
           </div>
           <div class="grid gap-5 md:grid-cols-[1fr_1.1fr] p-5">
@@ -22,6 +23,13 @@ export function renderSlideDeckHtml(slides: any[]) {
             <div class="rounded-lg bg-surface-container-low p-4">
               <p class="text-xs font-semibold text-on-surface mb-2">Speaker Notes</p>
               <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(slide.speaker_notes || '')}</p>
+              ${(slide.icon || slide.chart_type || slide.image_prompt) ? `
+                <div class="mt-3 flex flex-wrap gap-2 text-[11px]">
+                  ${slide.icon ? `<span class="rounded-full bg-violet-100 text-violet-700 px-2 py-1">Icon: ${escapeHtml(slide.icon)}</span>` : ''}
+                  ${slide.chart_type ? `<span class="rounded-full bg-blue-100 text-blue-700 px-2 py-1">Chart: ${escapeHtml(slide.chart_type)}</span>` : ''}
+                  ${slide.image_prompt ? `<span class="rounded-full bg-emerald-100 text-emerald-700 px-2 py-1">Image: ${escapeHtml(slide.image_prompt)}</span>` : ''}
+                </div>
+              ` : ''}
               ${slide.source_reference ? `<p class="mt-3 text-[11px] font-mono text-outline">Source: ${escapeHtml(slide.source_reference)}</p>` : ''}
             </div>
           </div>

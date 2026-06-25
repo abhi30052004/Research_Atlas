@@ -1,11 +1,17 @@
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   Edit3, Undo, Redo, Type, Bold, Italic, Underline,
   List, ListOrdered, AlignLeft, AlignCenter, AlignRight,
   Download, RefreshCw, Sparkles
 } from 'lucide-react'
 import { Artifact } from '../../../api/workspace'
-import { getToolIcon } from '../utils'
+import {
+  getTool,
+  getToolIcon,
+  normalizeSlideDeckContent,
+  renderSlideDeckDocument,
+  SlideDeckDocument
+} from '../utils'
 
 interface EditableTabProps {
   editingArtifact: Artifact | null
@@ -36,62 +42,124 @@ export function EditableTab({
   setActiveTab,
   execCmd,
 }: EditableTabProps) {
+  const isSlideDeckArtifact = Boolean(
+    editingArtifact && ((getTool(editingArtifact.tool)?.type || editingArtifact.tool) === 'slide_deck')
+  )
+
+  const [slideDeckDoc, setSlideDeckDoc] = useState<SlideDeckDocument | null>(null)
+  const renderedSlideDeckHtml = useMemo(
+    () => (slideDeckDoc ? renderSlideDeckDocument(slideDeckDoc) : ''),
+    [slideDeckDoc]
+  )
+
+  useEffect(() => {
+    if (!editingArtifact || !isSlideDeckArtifact) {
+      setSlideDeckDoc(null)
+      return
+    }
+    const parsed = normalizeSlideDeckContent(editingArtifact.structuredContent ?? editingArtifact.content)
+    setSlideDeckDoc(parsed)
+  }, [editingArtifact, isSlideDeckArtifact])
+
+  useEffect(() => {
+    if (!isSlideDeckArtifact || !editorRef.current || !renderedSlideDeckHtml) return
+    editorRef.current.innerHTML = renderedSlideDeckHtml
+  }, [isSlideDeckArtifact, renderedSlideDeckHtml, editorRef])
+
+  const updateSlide = (index: number, updates: Record<string, unknown>) => {
+    setSlideDeckDoc((prev) => {
+      if (!prev) return prev
+      const nextSlides = prev.slides.map((slide, i) => (i === index ? { ...slide, ...updates } : slide))
+      return { ...prev, slides: nextSlides }
+    })
+  }
+
+  const saveChanges = () => {
+    if (!editingArtifact) return
+
+    if (isSlideDeckArtifact && slideDeckDoc) {
+      const updatedHtml = renderSlideDeckDocument(slideDeckDoc)
+      if (editorRef.current) {
+        editorRef.current.innerHTML = updatedHtml
+      }
+      setArtifacts((prev) =>
+        prev.map((a) => (a.id === editingArtifact.id
+          ? { ...a, content: updatedHtml, structuredContent: slideDeckDoc }
+          : a))
+      )
+      setEditingArtifact({ ...editingArtifact, content: updatedHtml, structuredContent: slideDeckDoc })
+      return
+    }
+
+    if (editorRef.current) {
+      const updated = editorRef.current.innerHTML
+      setArtifacts((prev) =>
+        prev.map((a) => (a.id === editingArtifact.id ? { ...a, content: updated } : a))
+      )
+      setEditingArtifact({ ...editingArtifact, content: updated })
+    }
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-white">
       {editingArtifact ? (
         <>
           {/* Toolbar */}
           <div className="flex items-center gap-1 px-6 py-2.5 border-b border-outline-variant bg-surface-container-lowest flex-shrink-0 flex-wrap">
-            {/* Undo / Redo */}
-            <button onClick={() => execCmd('undo')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Undo">
-              <Undo className="w-4 h-4" />
-            </button>
-            <button onClick={() => execCmd('redo')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Redo">
-              <Redo className="w-4 h-4" />
-            </button>
+            {!isSlideDeckArtifact && (
+              <>
+                {/* Undo / Redo */}
+                <button onClick={() => execCmd('undo')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Undo">
+                  <Undo className="w-4 h-4" />
+                </button>
+                <button onClick={() => execCmd('redo')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Redo">
+                  <Redo className="w-4 h-4" />
+                </button>
 
-            <span className="w-px h-5 bg-outline-variant mx-1" />
+                <span className="w-px h-5 bg-outline-variant mx-1" />
 
-            {/* Headings */}
-            <button onClick={() => execCmd('formatBlock', 'H2')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Heading">
-              <Type className="w-4 h-4" />
-            </button>
+                {/* Headings */}
+                <button onClick={() => execCmd('formatBlock', 'H2')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Heading">
+                  <Type className="w-4 h-4" />
+                </button>
 
-            <span className="w-px h-5 bg-outline-variant mx-1" />
+                <span className="w-px h-5 bg-outline-variant mx-1" />
 
-            {/* Bold, Italic, Underline */}
-            <button onClick={() => execCmd('bold')} className="p-2 rounded-lg text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors" title="Bold (Ctrl+B)">
-              <Bold className="w-4 h-4" />
-            </button>
-            <button onClick={() => execCmd('italic')} className="p-2 rounded-lg text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors" title="Italic (Ctrl+I)">
-              <Italic className="w-4 h-4" />
-            </button>
-            <button onClick={() => execCmd('underline')} className="p-2 rounded-lg text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors" title="Underline (Ctrl+U)">
-              <Underline className="w-4 h-4" />
-            </button>
+                {/* Bold, Italic, Underline */}
+                <button onClick={() => execCmd('bold')} className="p-2 rounded-lg text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors" title="Bold (Ctrl+B)">
+                  <Bold className="w-4 h-4" />
+                </button>
+                <button onClick={() => execCmd('italic')} className="p-2 rounded-lg text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors" title="Italic (Ctrl+I)">
+                  <Italic className="w-4 h-4" />
+                </button>
+                <button onClick={() => execCmd('underline')} className="p-2 rounded-lg text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors" title="Underline (Ctrl+U)">
+                  <Underline className="w-4 h-4" />
+                </button>
 
-            <span className="w-px h-5 bg-outline-variant mx-1" />
+                <span className="w-px h-5 bg-outline-variant mx-1" />
 
-            {/* Lists */}
-            <button onClick={() => execCmd('insertUnorderedList')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Bullet List">
-              <List className="w-4 h-4" />
-            </button>
-            <button onClick={() => execCmd('insertOrderedList')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Numbered List">
-              <ListOrdered className="w-4 h-4" />
-            </button>
+                {/* Lists */}
+                <button onClick={() => execCmd('insertUnorderedList')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Bullet List">
+                  <List className="w-4 h-4" />
+                </button>
+                <button onClick={() => execCmd('insertOrderedList')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Numbered List">
+                  <ListOrdered className="w-4 h-4" />
+                </button>
 
-            <span className="w-px h-5 bg-outline-variant mx-1" />
+                <span className="w-px h-5 bg-outline-variant mx-1" />
 
-            {/* Alignment */}
-            <button onClick={() => execCmd('justifyLeft')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Align Left">
-              <AlignLeft className="w-4 h-4" />
-            </button>
-            <button onClick={() => execCmd('justifyCenter')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Align Center">
-              <AlignCenter className="w-4 h-4" />
-            </button>
-            <button onClick={() => execCmd('justifyRight')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Align Right">
-              <AlignRight className="w-4 h-4" />
-            </button>
+                {/* Alignment */}
+                <button onClick={() => execCmd('justifyLeft')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Align Left">
+                  <AlignLeft className="w-4 h-4" />
+                </button>
+                <button onClick={() => execCmd('justifyCenter')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Align Center">
+                  <AlignCenter className="w-4 h-4" />
+                </button>
+                <button onClick={() => execCmd('justifyRight')} className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" title="Align Right">
+                  <AlignRight className="w-4 h-4" />
+                </button>
+              </>
+            )}
 
             {/* Spacer */}
             <div className="flex-1" />
@@ -140,15 +208,7 @@ export function EditableTab({
 
             {/* Save button */}
             <button
-              onClick={() => {
-                if (editorRef.current && editingArtifact) {
-                  const updated = editorRef.current.innerHTML
-                  setArtifacts((prev) =>
-                    prev.map((a) => a.id === editingArtifact.id ? { ...a, content: updated } : a)
-                  )
-                  setEditingArtifact({ ...editingArtifact, content: updated })
-                }
-              }}
+              onClick={saveChanges}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-secondary text-white rounded-lg text-xs font-medium hover:bg-indigo-600 transition-colors"
             >
               Save Changes
@@ -171,20 +231,91 @@ export function EditableTab({
           {/* ContentEditable area */}
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <div className="max-w-3xl mx-auto px-12 py-8">
-              <div
-                ref={editorRef}
-                contentEditable
-                suppressContentEditableWarning
-                className="prose prose-slate max-w-none text-sm leading-relaxed min-h-[400px] outline-none
-                  [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-on-surface [&_h2]:mb-3
-                  [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-on-surface [&_h3]:mb-2 [&_h3]:mt-4
-                  [&_p]:text-on-surface-variant [&_p]:mb-3 [&_p]:leading-relaxed
-                  [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3 [&_ul]:space-y-1 [&_ul]:text-on-surface-variant
-                  [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3 [&_ol]:space-y-1 [&_ol]:text-on-surface-variant
-                  [&_li]:text-on-surface-variant
-                  [&_strong]:text-on-surface [&_strong]:font-semibold"
-                dangerouslySetInnerHTML={{ __html: editingArtifact.content }}
-              />
+              {isSlideDeckArtifact && slideDeckDoc ? (
+                <div className="space-y-5">
+                  {slideDeckDoc.slides.map((slide, index) => (
+                    <section key={`${slide.slide_number}-${index}`} className="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <div className="text-xs uppercase font-semibold text-on-surface-variant">
+                          Slide {slide.slide_number} - {slide.slide_type}
+                        </div>
+                      </div>
+                      <div className="grid gap-3">
+                        <input
+                          value={slide.title}
+                          onChange={(e) => updateSlide(index, { title: e.target.value })}
+                          placeholder="Slide title"
+                          className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                        />
+                        <input
+                          value={slide.subtitle || ''}
+                          onChange={(e) => updateSlide(index, { subtitle: e.target.value })}
+                          placeholder="Subtitle"
+                          className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                        />
+                        <textarea
+                          value={(slide.bullets || []).join('\n')}
+                          onChange={(e) => updateSlide(index, {
+                            bullets: e.target.value.split('\n').map((line) => line.trim()).filter(Boolean)
+                          })}
+                          placeholder="Bullet points (one line per bullet)"
+                          className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm h-24 resize-y focus:outline-none focus:border-secondary"
+                        />
+                        <textarea
+                          value={slide.speaker_notes || ''}
+                          onChange={(e) => updateSlide(index, { speaker_notes: e.target.value })}
+                          placeholder="Speaker notes"
+                          className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm h-24 resize-y focus:outline-none focus:border-secondary"
+                        />
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <input
+                            value={slide.icon || ''}
+                            onChange={(e) => updateSlide(index, { icon: e.target.value })}
+                            placeholder="Icon hint"
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                          <input
+                            value={slide.chart_type || ''}
+                            onChange={(e) => updateSlide(index, { chart_type: e.target.value })}
+                            placeholder="Chart type"
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                          <input
+                            value={slide.image_prompt || ''}
+                            onChange={(e) => updateSlide(index, { image_prompt: e.target.value })}
+                            placeholder="Image prompt"
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                        </div>
+                        <input
+                          value={slide.source_reference || ''}
+                          onChange={(e) => updateSlide(index, { source_reference: e.target.value })}
+                          placeholder="Source reference"
+                          className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                        />
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  className="prose prose-slate max-w-none text-sm leading-relaxed min-h-[400px] outline-none
+                    [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-on-surface [&_h2]:mb-3
+                    [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-on-surface [&_h3]:mb-2 [&_h3]:mt-4
+                    [&_p]:text-on-surface-variant [&_p]:mb-3 [&_p]:leading-relaxed
+                    [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3 [&_ul]:space-y-1 [&_ul]:text-on-surface-variant
+                    [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-3 [&_ol]:space-y-1 [&_ol]:text-on-surface-variant
+                    [&_li]:text-on-surface-variant
+                    [&_strong]:text-on-surface [&_strong]:font-semibold"
+                  dangerouslySetInnerHTML={{ __html: editingArtifact.content }}
+                />
+              )}
+              {isSlideDeckArtifact && (
+                <div ref={editorRef} className="hidden" aria-hidden="true" />
+              )}
             </div>
           </div>
         </>

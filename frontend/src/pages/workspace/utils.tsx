@@ -12,6 +12,24 @@ import {
   renderMindMapHtml
 } from './renderers'
 
+export interface SlideDeckSlide {
+  slide_number: number
+  slide_type: string
+  title: string
+  subtitle?: string
+  bullets: string[]
+  speaker_notes: string
+  source_reference?: string
+  icon?: string
+  chart_type?: string
+  image_prompt?: string
+}
+
+export interface SlideDeckDocument {
+  schema: 'atlas_slide_deck_v1'
+  slides: SlideDeckSlide[]
+}
+
 export function parseStreamData(line: string) {
   let dataStr = line.trim()
   while (dataStr.startsWith('data:')) {
@@ -140,6 +158,42 @@ export function parseMaybeJson(content: unknown) {
   }
 }
 
+export function normalizeSlideDeckContent(content: unknown): SlideDeckDocument | null {
+  const parsed = parseMaybeJson(content)
+  const rawSlides = Array.isArray(parsed)
+    ? parsed
+    : (parsed && typeof parsed === 'object' && Array.isArray((parsed as any).slides) ? (parsed as any).slides : null)
+
+  if (!rawSlides) return null
+
+  const slides: SlideDeckSlide[] = rawSlides.map((raw: any, index: number) => {
+    const bullets = Array.isArray(raw?.bullets)
+      ? raw.bullets.map((b: unknown) => String(b || '').trim()).filter(Boolean)
+      : []
+    return {
+      slide_number: Number(raw?.slide_number) || index + 1,
+      slide_type: String(raw?.slide_type || 'content'),
+      title: String(raw?.title || `Slide ${index + 1}`),
+      subtitle: raw?.subtitle ? String(raw.subtitle) : '',
+      bullets,
+      speaker_notes: String(raw?.speaker_notes || ''),
+      source_reference: raw?.source_reference ? String(raw.source_reference) : '',
+      icon: raw?.icon ? String(raw.icon) : '',
+      chart_type: raw?.chart_type ? String(raw.chart_type) : '',
+      image_prompt: raw?.image_prompt ? String(raw.image_prompt) : '',
+    }
+  })
+
+  return {
+    schema: 'atlas_slide_deck_v1',
+    slides,
+  }
+}
+
+export function renderSlideDeckDocument(doc: SlideDeckDocument): string {
+  return DOMPurify.sanitize(renderSlideDeckHtml(doc.slides))
+}
+
 export function normalizeArtifactContent(tool: string, content: unknown) {
   const parsed = parseMaybeJson(content)
   const toolType = getTool(tool)?.type || tool
@@ -150,8 +204,9 @@ export function normalizeArtifactContent(tool: string, content: unknown) {
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && toolType === 'mind_map') {
     return DOMPurify.sanitize(renderMindMapHtml(parsed))
   }
-  if (Array.isArray(parsed) && toolType === 'slide_deck') {
-    return DOMPurify.sanitize(renderSlideDeckHtml(parsed))
+  if (toolType === 'slide_deck') {
+    const slideDeckDoc = normalizeSlideDeckContent(parsed)
+    if (slideDeckDoc) return renderSlideDeckDocument(slideDeckDoc)
   }
   if (Array.isArray(parsed) && toolType === 'flashcards') {
     return DOMPurify.sanitize(renderFlashcardsHtml(parsed))

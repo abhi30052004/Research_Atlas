@@ -31,7 +31,8 @@ import {
   displayNameFromUrl,
   getTool,
   formatToolName,
-  normalizeArtifactContent
+  normalizeArtifactContent,
+  normalizeSlideDeckContent
 } from './utils'
 
 // Imported Components
@@ -77,6 +78,24 @@ export default function WorkspacePage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [likedIds, setLikedIds] = useState<string[]>([])
 
+  const hydrateArtifact = useCallback((artifact: any, fallbackSourceIds: string[] = []): Artifact => {
+    const tool = artifact.artifact_type || artifact.tool
+    const slideDeckDoc = (getTool(tool)?.type || tool) === 'slide_deck'
+      ? normalizeSlideDeckContent(artifact.content)
+      : null
+    return {
+      ...artifact,
+      id: artifact.id || artifact._id,
+      tool,
+      title: artifact.title || formatToolName(tool),
+      createdAt: new Date(artifact.created_at || artifact.createdAt || new Date()),
+      sourceCount: artifact.source_ids?.length || artifact.sourceCount || fallbackSourceIds.length,
+      sourceIds: artifact.source_ids || fallbackSourceIds,
+      structuredContent: slideDeckDoc || undefined,
+      content: slideDeckDoc ? normalizeArtifactContent(tool, slideDeckDoc) : normalizeArtifactContent(tool, artifact.content)
+    }
+  }, [])
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
@@ -102,19 +121,7 @@ export default function WorkspacePage() {
           chunkCount: s.chunk_count || s.chunkCount || 0,
           errorMessage: s.error_message || s.errorMessage
         })))
-        setArtifacts((fetchedArtifacts || []).map((a: any) => {
-          const tool = a.artifact_type || a.tool
-          return {
-            ...a,
-            id: a.id || a._id,
-            tool,
-            title: a.title || formatToolName(tool),
-            createdAt: new Date(a.created_at || a.createdAt || new Date()),
-            sourceCount: a.source_ids?.length || a.sourceCount || 0,
-            sourceIds: a.source_ids || [],
-            content: normalizeArtifactContent(tool, a.content)
-          }
-        }))
+        setArtifacts((fetchedArtifacts || []).map((a: any) => hydrateArtifact(a)))
 
         if (fetchedChats && fetchedChats.length > 0) {
           setCurrentChatId(fetchedChats[0].id)
@@ -137,7 +144,7 @@ export default function WorkspacePage() {
       }
     }
     loadData()
-  }, [workspaceId, setActiveWorkspace])
+  }, [workspaceId, setActiveWorkspace, hydrateArtifact])
 
   /* ---- UI Store ---- */
   const { addToast, addNotification, recordAICall, aiCalls, aiDailyLimit } = useUIStore()
@@ -444,12 +451,13 @@ export default function WorkspacePage() {
         custom_prompt: regeneratePrompt
       })
 
-      const tool = rawArtifact.artifact_type || rawArtifact.tool || artifact_type
-      const newContent = normalizeArtifactContent(tool, rawArtifact.content)
+      const regeneratedArtifact = hydrateArtifact(rawArtifact, editingArtifact.sourceIds || [])
+      const newContent = regeneratedArtifact.content
       
       if (editorRef.current) {
         editorRef.current.innerHTML = newContent
       }
+      setEditingArtifact(regeneratedArtifact)
       setRegeneratePrompt('')
       recordAICall('Regenerate Artifact')
       addToast('Regeneration complete. Click Save Changes to apply.', 'success')
@@ -465,8 +473,8 @@ export default function WorkspacePage() {
 
   /* ---- Export helpers for Editable tab ---- */
   const exportAsPdf = () => {
-    if (!editorRef.current || !editingArtifact) return
-    const content = editorRef.current.innerHTML
+    if (!editingArtifact) return
+    const content = editorRef.current?.innerHTML?.trim() || editingArtifact.content
     const title = editingArtifact.tool
     const printWindow = window.open('', '_blank')
     if (!printWindow) return
@@ -495,8 +503,8 @@ export default function WorkspacePage() {
   }
 
   const exportAsDocx = () => {
-    if (!editorRef.current || !editingArtifact) return
-    const content = editorRef.current.innerHTML
+    if (!editingArtifact) return
+    const content = editorRef.current?.innerHTML?.trim() || editingArtifact.content
     const title = editingArtifact.tool
     const html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -674,17 +682,7 @@ export default function WorkspacePage() {
         source_ids: selectedReadySourceIds
       })
 
-      const tool = rawArtifact.artifact_type || rawArtifact.tool || artifact_type
-
-      const newArtifact: Artifact = {
-        id: rawArtifact.id || rawArtifact._id,
-        tool,
-        title: rawArtifact.title || formatToolName(tool),
-        content: normalizeArtifactContent(tool, rawArtifact.content),
-        createdAt: new Date(rawArtifact.created_at || rawArtifact.createdAt || new Date()),
-        sourceCount: rawArtifact.source_ids?.length || selectedReadySourceIds.length,
-        sourceIds: rawArtifact.source_ids || selectedReadySourceIds
-      }
+      const newArtifact: Artifact = hydrateArtifact(rawArtifact, selectedReadySourceIds)
 
       setArtifacts((prev) => [newArtifact, ...prev])
       setEditingArtifact(newArtifact)
@@ -710,7 +708,7 @@ export default function WorkspacePage() {
     } finally {
       setIsGeneratingArtifact(false)
     }
-  }, [selectedTool, workspaceId, isGeneratingArtifact, sources, readySources, selectedReadySourceIds, hasProcessingSources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast, refreshSources])
+  }, [selectedTool, workspaceId, isGeneratingArtifact, sources, readySources, selectedReadySourceIds, hasProcessingSources, todayCount, aiDailyLimit, recordAICall, addNotification, addToast, refreshSources, hydrateArtifact])
 
   /* ---- Artifact actions ---- */
   const handleDeleteArtifact = async (id: string) => {
