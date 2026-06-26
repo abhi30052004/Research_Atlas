@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Depends, Query, status
 
-from app.schemas.artifact import ArtifactGenerateRequest, ArtifactResponse, ArtifactListResponse
+from app.schemas.artifact import (
+    ArtifactGenerateRequest,
+    ArtifactResponse,
+    ArtifactListResponse,
+    VisualAssetRequest,
+    VisualBlockEditRequest,
+)
 from app.services.artifact_service import artifact_service
 from app.core.deps import get_current_user
 
@@ -30,6 +36,31 @@ async def list_artifacts(
 ):
     artifacts = await artifact_service.list_by_workspace(workspace_id, str(current_user["_id"]))
     return {"artifacts": artifacts, "total": len(artifacts)}
+
+
+@router.post("/visual-asset")
+async def create_visual_asset(
+    data: VisualAssetRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    return await artifact_service.create_visual_asset(
+        mode=data.mode,
+        query=data.query,
+        prompt=data.prompt,
+    )
+
+
+@router.post("/edit-block")
+async def edit_visual_block(
+    data: VisualBlockEditRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    return await artifact_service.edit_visual_block(
+        artifact_type=data.artifact_type,
+        block=data.block,
+        instruction=data.instruction,
+        model=data.model,
+    )
 
 
 @router.get("/{artifact_id}")

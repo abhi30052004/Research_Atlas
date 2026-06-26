@@ -1,9 +1,13 @@
 import logging
 import json
+import re
 from datetime import datetime, timezone
-from typing import List, Optional
+from html import escape as html_escape
+from typing import Any, List, Optional
+from urllib.parse import quote
 from bson import ObjectId
 from fastapi import HTTPException
+import httpx
 from openai import AsyncOpenAI
 from groq import AsyncGroq
 
@@ -191,82 +195,24 @@ Rules:
 """,
 
     ArtifactType.SLIDE_DECK: """
-You are a presentation designer at Atlas AI. Using the source chunks provided below, create a complete Slide Deck Studio package with content, visuals, data, and presenter guidance.
+Create a source-grounded Slide Deck Studio artifact.
 
-Return ONLY valid JSON - no markdown code fences, no explanation, no preamble:
+Return ONLY parseable JSON, no markdown fences:
 {
-  "schema": "atlas_slide_deck_v2",
-  "deck_title": "<presentation title>",
-  "template": "executive_briefing | investor_pitch | research_report | strategy_review | training",
-  "color_theme": {
-    "name": "<professional theme name>",
-    "primary": "<hex color>",
-    "accent": "<hex color>",
-    "background": "<hex color>"
-  },
-  "slides": [
-    {
-      "slide_number": 1,
-      "slide_type": "title | agenda | section | content | data | quote | comparison | timeline | diagram | summary | q_and_a",
-      "layout": "title | two_column | visual_left | visual_right | chart_focus | table_focus | timeline | smart_art | closing",
-      "title": "<slide title>",
-      "subtitle": "<optional subtitle>",
-      "bullets": ["<point 1>", "<point 2>", "<point 3>"],
-      "speaker_notes": "<2-4 sentences the presenter should say for this slide>",
-      "icon": "<matching Lucide-style icon name or concise icon concept>",
-      "image_prompt": "<AI image prompt for a relevant professional visual, or empty string>",
-      "image_search_query": "<short search query for a relevant image, or empty string>",
-      "image_alt": "<accessible image description, or empty string>",
-      "chart_type": "bar | line | pie | donut | metric | none",
-      "chart_data": {
-        "title": "<chart title>",
-        "labels": ["<label>"],
-        "values": [0],
-        "unit": "<%, $, count, or empty>",
-        "insight": "<one sentence takeaway>"
-      },
-      "table": {
-        "columns": ["<column>"],
-        "rows": [["<cell>"]]
-      },
-      "timeline": [
-        { "date": "<date or phase>", "label": "<milestone>", "description": "<brief detail>" }
-      ],
-      "diagram": {
-        "type": "process | hierarchy | cycle | matrix | comparison | none",
-        "nodes": ["<node>"],
-        "relationships": ["<relationship label>"]
-      },
-      "source_reference": "<filename or null>"
-    }
-  ]
+  "schema":"atlas_slide_deck_v2",
+  "deck_title":"...",
+  "template":"executive_briefing|research_report|strategy_review|training",
+  "color_theme":{"name":"...","primary":"#123456","accent":"#123456","background":"#123456"},
+  "slides":[{"slide_number":1,"slide_type":"title|agenda|content|data|comparison|timeline|diagram|summary|q_and_a","layout":"title|two_column|visual_left|visual_right|chart_focus|table_focus|timeline|smart_art|closing","title":"...","subtitle":"","bullets":["..."],"speaker_notes":"2-4 presenter sentences","icon":"","image_prompt":"","image_search_query":"","image_alt":"","chart_type":"none|bar|line|pie|donut|metric","chart_data":{"title":"","labels":[],"values":[],"unit":"","insight":""},"table":{"columns":[],"rows":[]},"timeline":[],"diagram":{"type":"none","nodes":[],"relationships":[]},"source_reference":""}]
 }
 
-Follow this slide sequence exactly:
-- Slide 1: Title slide
-- Slide 2: Agenda / Overview
-- Slides 3-9: Content slides (one major theme per slide, derived from sources)
-- Slide 10: Key Takeaways
-- Slide 11: Recommendations or Next Steps
-- Slide 12: Q&A / Thank You
-
 Rules:
-- Create a polished business presentation structure, not a document pasted into slides.
-- Every slide title must be specific and presentation-ready.
-- Maximum 5 bullets per slide; each bullet must be under 12 words.
-- Each bullet must contain exactly one idea. Do not split one sentence across multiple bullets.
-- Use parallel bullet phrasing and avoid full paragraphs, semicolons, and multi-clause bullets.
-- Speaker notes must add context not visible in the bullets.
-- Add a matching icon for every slide except title and Q&A.
-- Add image_prompt and image_search_query where a real visual would improve comprehension. Keep them empty for dense data/table slides.
-- Convert explicit statistics, percentages, dates, counts, or measurable facts into chart_data on data slides. Do not invent statistics.
-- Use table only when the sources contain comparisons, categories, criteria, options, or structured rows.
-- Use timeline only when the sources contain dates, phases, milestones, or chronological process steps.
-- Use diagram for workflows, causal chains, frameworks, taxonomies, or SmartArt-style concepts.
-- Select the deck-level template and color_theme based on the source material and audience.
-- Include source_reference on every evidence-based slide.
-- Derive all content from the provided sources only.
-- Return ONLY the JSON object. No text before or after it.
+- Generate exactly 12 slides: title, agenda, 7 content/data slides, takeaways, next steps, Q&A.
+- Max 5 bullets per slide; each bullet under 12 words.
+- Use charts/tables/timeline/diagram only when source evidence supports them.
+- Add icon and visual prompt/search query when useful; keep empty when not useful.
+- Do not invent facts, numbers, dates, or sources.
+- JSON must parse with Python json.loads.
 """,
     ArtifactType.MIND_MAP: """
 You are a knowledge architect at Atlas AI. Using the source chunks provided below, create a structured mind map.
@@ -358,96 +304,27 @@ Rules:
 """,
 
     ArtifactType.INFOGRAPHIC_CONTENT: """
-You are an infographic designer at Atlas AI. Using the source chunks provided below, produce a complete Infographic Studio document with structured visual elements.
+Create a source-grounded Infographic Studio artifact.
 
-Return ONLY valid JSON - no markdown code fences, no explanation, no preamble:
+Return ONLY parseable JSON, no markdown fences:
 {
-  "schema": "atlas_infographic_v2",
-  "title": "<punchy infographic headline, 6-10 words>",
-  "subtitle": "<one sentence expanding on the headline>",
-  "template": "data_story | process_map | comparison | timeline | hierarchy | executive_snapshot | educational",
-  "color_theme": {
-    "name": "<professional theme name>",
-    "primary": "<hex color>",
-    "accent": "<hex color>",
-    "background": "<hex color>"
-  },
-  "width": 900,
-  "height": 1000,
-  "background": "<hex color>",
-  "elements": [
-    {
-      "id": "chart_1",
-      "type": "chart",
-      "title": "<chart title>",
-      "text": "<short chart insight>",
-      "chart_type": "bar | line | pie | donut | metric",
-      "chart_data": {
-        "labels": ["<label>"],
-        "values": [0],
-        "unit": "<%, $, count, or empty>"
-      },
-      "icon": "<matching icon concept>",
-      "source": "<filename or null>"
-    },
-    {
-      "id": "flow_1",
-      "type": "process_flow",
-      "title": "<process title>",
-      "steps": ["<step 1>", "<step 2>", "<step 3>"],
-      "source": "<filename or null>"
-    },
-    {
-      "id": "timeline_1",
-      "type": "timeline",
-      "title": "<timeline title>",
-      "timeline": [
-        { "date": "<date or phase>", "label": "<milestone>", "description": "<brief detail>" }
-      ],
-      "source": "<filename or null>"
-    },
-    {
-      "id": "mindmap_1",
-      "type": "mind_map",
-      "title": "<central idea>",
-      "nodes": [
-        { "label": "<branch>", "children": ["<detail>"] }
-      ],
-      "source": "<filename or null>"
-    },
-    {
-      "id": "hierarchy_1",
-      "type": "hierarchy",
-      "title": "<hierarchy title>",
-      "nodes": [
-        { "label": "<parent>", "children": ["<child>"] }
-      ],
-      "source": "<filename or null>"
-    },
-    {
-      "id": "concept_1",
-      "type": "icon_card",
-      "title": "<key concept>",
-      "text": "<short supporting detail>",
-      "icon": "<matching icon concept>",
-      "source": "<filename or null>"
-    }
-  ],
-  "takeaways": ["<closing takeaway>"]
+  "schema":"atlas_infographic_v2",
+  "title":"6-10 word headline",
+  "subtitle":"one sentence",
+  "template":"data_story|process_map|comparison|timeline|hierarchy|executive_snapshot|educational",
+  "color_theme":{"name":"...","primary":"#123456","accent":"#123456","background":"#123456"},
+  "width":900,"height":1000,"background":"#123456",
+  "elements":[{"id":"chart_1","type":"chart","title":"","text":"","chart_type":"bar|line|pie|donut|metric","chart_data":{"labels":[],"values":[],"unit":""},"icon":"","source":""},{"id":"concept_1","type":"icon_card","title":"","text":"","icon":"","source":""},{"id":"flow_1","type":"process_flow","title":"","steps":[],"source":""},{"id":"timeline_1","type":"timeline","title":"","timeline":[],"source":""},{"id":"mindmap_1","type":"mind_map","title":"","nodes":[],"source":""},{"id":"hierarchy_1","type":"hierarchy","title":"","nodes":[],"source":""}],
+  "takeaways":["..."]
 }
 
 Rules:
-- Convert explicit statistics, percentages, counts, dates, and measurable facts into chart elements. Do not invent data.
-- Use icon_card elements for key concepts that are not numerical.
-- Use process_flow when the sources describe a workflow, sequence, method, or lifecycle.
-- Use timeline when the sources include dates, phases, periods, or chronological milestones.
-- Use mind_map when the sources describe related themes, branches, categories, or concepts.
-- Use hierarchy when the sources describe levels, roles, taxonomies, organizational structure, or parent-child relationships.
-- Apply a professional template, color theme, spacing, and visual hierarchy suitable for quick scanning.
-- Keep all text short and visual. Avoid paragraphs.
-- Cite source on any specific stat, event, or claim using the source field.
-- Use only facts and data from the provided sources.
-- Return ONLY the JSON object. No text before or after it.
+- Include 5-9 useful elements total; omit unsupported element types.
+- Convert explicit numbers into chart elements only; never invent values.
+- Use flows for sequences, timelines for dates/phases, mind maps for themes, hierarchy for levels/taxonomies.
+- Keep text short and visual; cite specific claims in source fields.
+- Keep theme colors only inside color_theme, except top-level background.
+- JSON must parse with Python json.loads.
 """,
     ArtifactType.AUDIO_OVERVIEW_SCRIPT: """
 You are a podcast scriptwriter at Atlas AI. Using the source chunks provided below, write a natural, engaging audio overview script designed to be read aloud.
@@ -498,6 +375,234 @@ class ArtifactService:
             return AsyncGroq(api_key=settings.GROQ_API_KEY), "groq"
         return AsyncOpenAI(api_key=settings.OPENAI_API_KEY), "openai"
 
+    def _strip_json_fences(self, raw_text: str) -> str:
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            cleaned = cleaned.rsplit("```", 1)[0].strip()
+        return cleaned
+
+    def _visual_placeholder(self, label: str) -> dict:
+        safe_label = html_escape((label or "Research visual").strip()[:96])
+        svg = f"""
+        <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+          <defs>
+            <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#0f172a"/>
+              <stop offset="55%" stop-color="#2563eb"/>
+              <stop offset="100%" stop-color="#14b8a6"/>
+            </linearGradient>
+            <pattern id="p" width="44" height="44" patternUnits="userSpaceOnUse">
+              <path d="M44 0H0v44" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="1"/>
+            </pattern>
+          </defs>
+          <rect width="1200" height="675" fill="url(#g)"/>
+          <rect width="1200" height="675" fill="url(#p)"/>
+          <circle cx="1000" cy="120" r="170" fill="rgba(255,255,255,.15)"/>
+          <circle cx="130" cy="570" r="220" fill="rgba(255,255,255,.10)"/>
+          <text x="80" y="110" fill="rgba(255,255,255,.72)" font-family="Arial, sans-serif" font-size="30" font-weight="700">Atlas Visual</text>
+          <foreignObject x="80" y="170" width="900" height="260">
+            <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Arial,sans-serif;color:white;font-size:54px;font-weight:800;line-height:1.12">{safe_label}</div>
+          </foreignObject>
+          <text x="80" y="590" fill="rgba(255,255,255,.72)" font-family="Arial, sans-serif" font-size="24">Add an Unsplash access key for live image results</text>
+        </svg>
+        """
+        return {
+            "mode": "placeholder",
+            "source": "placeholder",
+            "image_url": f"data:image/svg+xml;charset=UTF-8,{quote(svg)}",
+            "thumbnail_url": None,
+            "credit": None,
+            "link": None,
+        }
+
+    async def create_visual_asset(
+        self,
+        mode: str,
+        query: Optional[str],
+        prompt: Optional[str],
+    ) -> dict:
+        visual_text = (prompt or query or "").strip()
+        if not visual_text:
+            raise HTTPException(status_code=400, detail="Provide an image query or generation prompt.")
+
+        if mode == "search":
+            if settings.UNSPLASH_ACCESS_KEY:
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        response = await client.get(
+                            "https://api.unsplash.com/search/photos",
+                            headers={"Authorization": f"Client-ID {settings.UNSPLASH_ACCESS_KEY}"},
+                            params={
+                                "query": query or visual_text,
+                                "per_page": 1,
+                                "orientation": "landscape",
+                            },
+                        )
+                    response.raise_for_status()
+                    payload = response.json()
+                    results = payload.get("results") or []
+                    if results:
+                        photo = results[0]
+                        urls = photo.get("urls") or {}
+                        user = photo.get("user") or {}
+                        links = photo.get("links") or {}
+                        return {
+                            "mode": "search",
+                            "source": "unsplash",
+                            "image_url": urls.get("regular") or urls.get("full") or urls.get("small"),
+                            "thumbnail_url": urls.get("small") or urls.get("thumb"),
+                            "credit": user.get("name"),
+                            "link": links.get("html"),
+                            "query": query or visual_text,
+                        }
+                except Exception as exc:
+                    logger.warning("Unsplash visual search failed; using placeholder: %s", exc)
+            return self._visual_placeholder(query or visual_text)
+
+        if mode != "generate":
+            raise HTTPException(status_code=400, detail="Visual asset mode must be search or generate.")
+        if not settings.OPENAI_API_KEY:
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for AI image generation.")
+
+        try:
+            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            response = await client.images.generate(
+                model=settings.OPENAI_IMAGE_MODEL,
+                prompt=visual_text,
+                size="1024x1024",
+            )
+            image = response.data[0]
+            b64_json = getattr(image, "b64_json", None)
+            image_url = getattr(image, "url", None)
+            if b64_json:
+                image_url = f"data:image/png;base64,{b64_json}"
+            if not image_url:
+                raise ValueError("Image API returned no image URL or base64 payload.")
+            return {
+                "mode": "generate",
+                "source": "openai",
+                "image_url": image_url,
+                "thumbnail_url": image_url,
+                "credit": "AI-generated",
+                "link": None,
+                "prompt": visual_text,
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("AI image generation failed")
+            raise HTTPException(status_code=502, detail=f"AI image generation failed: {exc}") from exc
+
+    async def edit_visual_block(
+        self,
+        artifact_type: ArtifactType,
+        block: Any,
+        instruction: str,
+        model: str,
+    ) -> dict:
+        if artifact_type not in {ArtifactType.SLIDE_DECK, ArtifactType.INFOGRAPHIC_CONTENT}:
+            raise HTTPException(status_code=400, detail="Block editing is only available for Slide Deck and Infographic Studio.")
+        if not isinstance(block, dict):
+            raise HTTPException(status_code=400, detail="Selected block must be a JSON object.")
+        if not instruction.strip():
+            raise HTTPException(status_code=400, detail="Describe how Atlas should edit the selected block.")
+
+        client, _client_type = self._get_client(model)
+        schema_hint = (
+            "Return one slide object with the same Slide Deck Studio fields."
+            if artifact_type == ArtifactType.SLIDE_DECK
+            else "Return one infographic element object with the same Infographic Studio fields."
+        )
+        prompt = f"""
+Edit only the selected visual block according to the user instruction.
+{schema_hint}
+
+Rules:
+- Return ONLY valid JSON, no markdown fences, no prose.
+- Preserve id, slide_number, type, x/y/width/height, and existing fields unless the instruction requires changing them.
+- Do not edit or reference any other slide, element, artifact, or source.
+- Keep text concise and presentation-ready.
+
+Selected block JSON:
+{json.dumps(block, ensure_ascii=False)}
+
+User instruction:
+{instruction.strip()}
+"""
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are Atlas AI's precise visual block editor."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.15,
+                max_tokens=1800,
+            )
+            raw_text = response.choices[0].message.content or ""
+            edited = json.loads(self._strip_json_fences(raw_text))
+            if not isinstance(edited, dict):
+                raise ValueError("Edited block response was not a JSON object.")
+            return {"block": edited}
+        except json.JSONDecodeError as exc:
+            logger.warning("Visual block edit returned invalid JSON: %s", exc)
+            raise HTTPException(status_code=502, detail="AI returned an invalid block. Try a shorter edit instruction.") from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("Visual block edit failed")
+            raise HTTPException(status_code=502, detail=f"AI block edit failed: {exc}") from exc
+
+    def _fallback_infographic_content(self, raw_text: str) -> dict:
+        def field(name: str, default: str = "") -> str:
+            match = re.search(rf'"{name}"\s*:\s*"([^"]+)"', raw_text)
+            return match.group(1).strip() if match else default
+
+        title = field("title", "Generated Infographic")
+        subtitle = field("subtitle", "Key insights from the selected sources.")
+        primary = field("primary", "#1E3A8A")
+        accent = field("accent", "#3B82F6")
+        background = field("background", "#F3F4F6")
+        lines = [
+            re.sub(r"^[`\-\s{}\[\],]+", "", line).strip().strip('"')
+            for line in raw_text.splitlines()
+        ]
+        concepts = [
+            line for line in lines
+            if line and ":" not in line[:24] and not line.startswith("schema")
+        ][:4]
+        if not concepts:
+            concepts = ["Review generated insights", "Refine this infographic", "Add source-backed details"]
+
+        return {
+            "schema": "atlas_infographic_v2",
+            "title": title,
+            "subtitle": subtitle,
+            "template": "executive_snapshot",
+            "color_theme": {
+                "name": "Recovered Professional Theme",
+                "primary": primary,
+                "accent": accent,
+                "background": background,
+            },
+            "width": 900,
+            "height": 1000,
+            "background": background,
+            "elements": [
+                {
+                    "id": f"concept_{index + 1}",
+                    "type": "icon_card",
+                    "title": concept[:48],
+                    "text": concept,
+                    "icon": "Sparkles",
+                    "source": None,
+                }
+                for index, concept in enumerate(concepts)
+            ],
+            "takeaways": ["Regenerate or refine this infographic for fully structured visuals."],
+        }
+
     def _parse_content(self, artifact_type: ArtifactType, raw_text: str):
         """
         For JSON artifact types, strip markdown fences and parse.
@@ -507,16 +612,19 @@ class ArtifactService:
             return raw_text
 
         # Strip markdown code fences if model wrapped the JSON anyway
-        cleaned = raw_text.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]          # drop opening fence line
-            cleaned = cleaned.rsplit("```", 1)[0].strip() # drop closing fence
+        cleaned = self._strip_json_fences(raw_text)
 
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError as e:
+            if artifact_type == ArtifactType.INFOGRAPHIC_CONTENT:
+                logger.warning(
+                    "JSON parse failed for infographic artifact: %s; using recovered visual document",
+                    e,
+                )
+                return self._fallback_infographic_content(cleaned)
             logger.warning(
-                "JSON parse failed for artifact type %s: %s — returning raw text",
+                "JSON parse failed for artifact type %s: %s - returning raw text",
                 artifact_type.value, e,
             )
             return raw_text
@@ -738,5 +846,4 @@ class ArtifactService:
 
 
 artifact_service = ArtifactService()
-
 

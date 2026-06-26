@@ -46,6 +46,7 @@ export interface SlideDeckSlide {
   }
   image_prompt?: string
   image_search_query?: string
+  image_url?: string
   image_alt?: string
 }
 
@@ -249,12 +250,75 @@ export function escapeHtml(value: unknown) {
 
 export function parseMaybeJson(content: unknown) {
   if (typeof content !== 'string') return content
-  const trimmed = content.trim()
+  let trimmed = content.trim()
+  if (trimmed.startsWith('```')) {
+    trimmed = trimmed
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim()
+  }
   if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return content
   try {
     return JSON.parse(trimmed)
   } catch {
     return content
+  }
+}
+
+function recoverMalformedInfographic(content: string): InfographicDocument {
+  const field = (name: string, fallback: string) => {
+    const match = content.match(new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`))
+    return match?.[1]?.trim() || fallback
+  }
+  const primary = field('primary', '#1E3A8A')
+  const accent = field('accent', '#3B82F6')
+  const background = field('background', '#F3F4F6')
+  const title = field('title', 'Generated Infographic')
+  const subtitle = field('subtitle', 'Key insights from the selected sources.')
+
+  return {
+    schema: 'atlas_infographic_v2',
+    title,
+    subtitle,
+    template: 'executive_snapshot',
+    color_theme: {
+      name: 'Recovered Professional Theme',
+      primary,
+      accent,
+      background,
+    },
+    takeaways: ['Regenerate or refine this infographic for fully structured visuals.'],
+    width: 900,
+    height: 1000,
+    background,
+    elements: [
+      {
+        id: 'recovered_concept_1',
+        type: 'icon_card',
+        title: 'Recovered Infographic',
+        text: 'The AI returned malformed JSON, so Atlas converted it into an editable visual fallback.',
+        icon: 'Sparkles',
+        x: 40,
+        y: 150,
+        width: 390,
+        height: 130,
+        fontSize: 16,
+        fill: primary,
+      },
+      {
+        id: 'recovered_concept_2',
+        type: 'icon_card',
+        title: 'Next Step',
+        text: 'Use the visual refinement prompt to regenerate charts, icons, flows, and hierarchy.',
+        icon: 'RefreshCw',
+        x: 470,
+        y: 150,
+        width: 390,
+        height: 130,
+        fontSize: 16,
+        fill: accent,
+      },
+    ],
   }
 }
 
@@ -505,6 +569,9 @@ export function normalizeInfographicContent(content: unknown): InfographicDocume
   }
 
   if (typeof parsed !== 'string') return null
+  if (parsed.includes('atlas_infographic_v2') || parsed.trim().startsWith('```')) {
+    return recoverMalformedInfographic(parsed)
+  }
   const data = parseInfographicSections(parsed)
   const elements: InfographicElement[] = [
     { id: 'title', type: 'title', text: data.title, x: 36, y: 24, width: 820, height: 64, fontSize: 42, fontStyle: 'bold', fill: '#0f172a', align: 'left' },

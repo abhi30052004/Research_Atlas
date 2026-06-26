@@ -4,7 +4,7 @@ import {
   List, ListOrdered, AlignLeft, AlignCenter, AlignRight,
   Download, RefreshCw, Sparkles
 } from 'lucide-react'
-import { Artifact } from '../../../api/workspace'
+import { Artifact, createVisualAsset, editVisualBlock } from '../../../api/workspace'
 import {
   getTool,
   getToolIcon,
@@ -71,6 +71,9 @@ export function EditableTab({
 
   const [slideDeckDoc, setSlideDeckDoc] = useState<SlideDeckDocument | null>(null)
   const [infographicDoc, setInfographicDoc] = useState<InfographicDocument | null>(null)
+  const [slideBlockPrompts, setSlideBlockPrompts] = useState<Record<number, string>>({})
+  const [busySlideAction, setBusySlideAction] = useState<string | null>(null)
+  const [visualActionError, setVisualActionError] = useState<string | null>(null)
   const renderedSlideDeckHtml = useMemo(
     () => (slideDeckDoc ? renderSlideDeckDocument(slideDeckDoc) : ''),
     [slideDeckDoc]
@@ -118,6 +121,53 @@ export function EditableTab({
 
   const updateSlideDeckMeta = (updates: Partial<SlideDeckDocument>) => {
     setSlideDeckDoc((prev) => (prev ? { ...prev, ...updates } : prev))
+  }
+
+  const setSlideBlockPrompt = (index: number, value: string) => {
+    setSlideBlockPrompts((prev) => ({ ...prev, [index]: value }))
+  }
+
+  const applySlideBlockEdit = async (index: number) => {
+    if (!slideDeckDoc) return
+    const instruction = (slideBlockPrompts[index] || '').trim()
+    if (!instruction) return
+    setBusySlideAction(`edit-${index}`)
+    setVisualActionError(null)
+    try {
+      const response = await editVisualBlock({
+        artifact_type: 'slide_deck',
+        block: slideDeckDoc.slides[index] as unknown as Record<string, unknown>,
+        instruction,
+      })
+      updateSlide(index, response.block)
+      setSlideBlockPrompt(index, '')
+    } catch (error: any) {
+      setVisualActionError(error?.response?.data?.detail || error?.message || 'AI block edit failed.')
+    } finally {
+      setBusySlideAction(null)
+    }
+  }
+
+  const applySlideImageAsset = async (index: number, mode: 'search' | 'generate') => {
+    if (!slideDeckDoc) return
+    const slide = slideDeckDoc.slides[index]
+    const prompt = slide.image_prompt || slide.image_search_query || slide.title
+    const query = slide.image_search_query || slide.title
+    setBusySlideAction(`${mode}-${index}`)
+    setVisualActionError(null)
+    try {
+      const asset = await createVisualAsset({ mode, query, prompt })
+      updateSlide(index, {
+        image_url: asset.image_url,
+        image_alt: slide.image_alt || query || prompt,
+        image_search_query: mode === 'search' ? (asset.query || query) : slide.image_search_query,
+        image_prompt: mode === 'generate' ? (asset.prompt || prompt) : slide.image_prompt,
+      })
+    } catch (error: any) {
+      setVisualActionError(error?.response?.data?.detail || error?.message || 'Visual asset request failed.')
+    } finally {
+      setBusySlideAction(null)
+    }
   }
 
   const saveChanges = () => {
@@ -313,8 +363,11 @@ export function EditableTab({
                         {isSlideDeckArtifact ? 'Slide Deck Studio Editor' : 'Infographic Studio Editor'}
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
-                        Edit fields directly, or choose a refinement chip above and regenerate only this visual artifact.
+                        Edit fields directly, ask AI to revise only a selected block, or attach real searched/generated visuals.
                       </p>
+                      {visualActionError && (
+                        <p className="mt-2 text-xs font-medium text-red-600">{visualActionError}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -442,6 +495,50 @@ export function EditableTab({
                             placeholder="Image alt text"
                             className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
                           />
+                        </div>
+                        <input
+                          value={slide.image_url || ''}
+                          onChange={(e) => updateSlide(index, { image_url: e.target.value })}
+                          placeholder="Real image URL / generated image URL"
+                          className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                        />
+                        <div className="rounded-lg border border-secondary/15 bg-secondary/5 p-3">
+                          <p className="mb-2 text-xs font-semibold text-on-surface">Selected slide AI tools</p>
+                          <div className="grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
+                            <input
+                              value={slideBlockPrompts[index] || ''}
+                              onChange={(e) => setSlideBlockPrompt(index, e.target.value)}
+                              placeholder="Ask AI to edit this slide only..."
+                              className="w-full rounded-lg border border-outline-variant bg-white px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => applySlideBlockEdit(index)}
+                              disabled={busySlideAction === `edit-${index}` || !(slideBlockPrompts[index] || '').trim()}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              {busySlideAction === `edit-${index}` ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                              Edit Block
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applySlideImageAsset(index, 'search')}
+                              disabled={busySlideAction === `search-${index}`}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-outline-variant bg-white px-3 py-2 text-xs font-medium text-on-surface-variant disabled:opacity-50"
+                            >
+                              {busySlideAction === `search-${index}` ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : null}
+                              Unsplash Image
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applySlideImageAsset(index, 'generate')}
+                              disabled={busySlideAction === `generate-${index}`}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-outline-variant bg-white px-3 py-2 text-xs font-medium text-on-surface-variant disabled:opacity-50"
+                            >
+                              {busySlideAction === `generate-${index}` ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : null}
+                              AI Generate
+                            </button>
+                          </div>
                         </div>
                         <input
                           value={slide.source_reference || ''}

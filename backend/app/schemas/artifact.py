@@ -13,6 +13,19 @@ class ArtifactGenerateRequest(BaseModel):
     model: str = "gpt-4o"
 
 
+class VisualAssetRequest(BaseModel):
+    mode: str = Field(default="search", pattern="^(search|generate)$")
+    query: Optional[str] = None
+    prompt: Optional[str] = None
+
+
+class VisualBlockEditRequest(BaseModel):
+    artifact_type: ArtifactType
+    block: Any
+    instruction: str
+    model: str = "gpt-4o"
+
+
 class ArtifactResponse(BaseModel):
     id: str
     workspace_id: str

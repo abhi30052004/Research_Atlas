@@ -6,9 +6,36 @@ function safeHex(value: unknown, fallback: string) {
 }
 
 function imageUrlForSlide(slide: any) {
+  if (slide.image_url) return String(slide.image_url)
   const query = String(slide.image_search_query || slide.image_prompt || slide.title || '').trim()
   if (!query) return ''
-  return `https://source.unsplash.com/featured/1200x675?${encodeURIComponent(query)}`
+  const label = escapeHtml(query.slice(0, 80))
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0f172a"/>
+          <stop offset="52%" stop-color="#1d4ed8"/>
+          <stop offset="100%" stop-color="#14b8a6"/>
+        </linearGradient>
+        <pattern id="p" width="42" height="42" patternUnits="userSpaceOnUse">
+          <path d="M42 0H0v42" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
+        </pattern>
+      </defs>
+      <rect width="1200" height="675" fill="url(#g)"/>
+      <rect width="1200" height="675" fill="url(#p)"/>
+      <circle cx="980" cy="130" r="170" fill="rgba(255,255,255,.14)"/>
+      <circle cx="105" cy="560" r="210" fill="rgba(255,255,255,.10)"/>
+      <text x="80" y="110" fill="rgba(255,255,255,.72)" font-family="Arial, sans-serif" font-size="30" font-weight="700">AI Visual Direction</text>
+      <foreignObject x="80" y="170" width="920" height="260">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Arial,sans-serif;color:white;font-size:54px;font-weight:800;line-height:1.12">
+          ${label}
+        </div>
+      </foreignObject>
+      <text x="80" y="590" fill="rgba(255,255,255,.72)" font-family="Arial, sans-serif" font-size="24">Generated visual placeholder</text>
+    </svg>
+  `
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
 
 function renderSlideChart(slide: any, accent: string) {

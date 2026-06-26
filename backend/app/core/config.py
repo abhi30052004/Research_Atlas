@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_DIMENSIONS: Optional[int] = 768
     OPENAI_DEFAULT_MODEL: str = "gpt-4o"
+    OPENAI_IMAGE_MODEL: str = "gpt-image-1"
+    UNSPLASH_ACCESS_KEY: str = ""
 
     GROQ_API_KEY: str = ""
     GROQ_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"

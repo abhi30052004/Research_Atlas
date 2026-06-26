@@ -84,6 +84,34 @@ export const generateArtifact = async (params: {
   return data
 }
 
+export const createVisualAsset = async (params: {
+  mode: 'search' | 'generate'
+  query?: string
+  prompt?: string
+}) => {
+  const { data } = await api.post(`/artifacts/visual-asset`, params)
+  return data as {
+    mode: string
+    source: string
+    image_url: string
+    thumbnail_url?: string | null
+    credit?: string | null
+    link?: string | null
+    query?: string
+    prompt?: string
+  }
+}
+
+export const editVisualBlock = async (params: {
+  artifact_type: 'slide_deck' | 'infographic_content'
+  block: Record<string, unknown>
+  instruction: string
+  model?: string
+}) => {
+  const { data } = await api.post(`/artifacts/edit-block`, params)
+  return data as { block: Record<string, unknown> }
+}
+
 export const fetchArtifacts = async (workspaceId: string) => {
   const { data } = await api.get(`/artifacts?workspace_id=${workspaceId}`)
   return data.artifacts
