@@ -1,8 +1,7 @@
-import { Suspense, useEffect, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Suspense, type ReactNode } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 import { ThemeProvider } from './components/ThemeProvider'
-import { getGoogleRedirectUser } from './lib/firebase'
 
 import SplashVideo from './pages/auth/SplashVideo'
 import LoginPage from './pages/auth/LoginPage'
@@ -22,36 +21,10 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/" replace />
 }
 
-let hasHandledGoogleRedirect = false
-
-const GoogleRedirectHandler = () => {
-  const navigate = useNavigate()
-  const googleLoginApi = useAuthStore((s) => s.googleLoginApi)
-
-  useEffect(() => {
-    if (hasHandledGoogleRedirect) return
-    hasHandledGoogleRedirect = true
-
-    getGoogleRedirectUser()
-      .then(async (user) => {
-        if (!user) return
-        const token = await user.getIdToken()
-        await googleLoginApi(token)
-        navigate('/dashboard', { replace: true })
-      })
-      .catch((error) => {
-        console.error('Google redirect sign-in failed:', error)
-      })
-  }, [googleLoginApi, navigate])
-
-  return null
-}
-
 export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
-        <GoogleRedirectHandler />
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<SplashVideo />} />

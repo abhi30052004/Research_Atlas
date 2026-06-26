@@ -13,13 +13,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     headers: {
-      // Required for OAuth popup flows (Google/Firebase) so popup can close safely.
-      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      // Firebase popup auth polls the Google window; cross-origin isolation logs noisy browser warnings.
+      'Cross-Origin-Opener-Policy': 'unsafe-none',
     },
   },
   preview: {
     headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'Cross-Origin-Opener-Policy': 'unsafe-none',
     },
   },
 })
