@@ -265,9 +265,25 @@ export function parseMaybeJson(content: unknown) {
   }
 }
 
+function normalizeMalformedVisualText(content: string): string {
+  return content
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function recoverMalformedInfographic(content: string): InfographicDocument {
+  const cleaned = normalizeMalformedVisualText(content)
   const field = (name: string, fallback: string) => {
-    const match = content.match(new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`))
+    const matches = [...cleaned.matchAll(new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`, 'g'))]
+    const match = matches[matches.length - 1]
     return match?.[1]?.trim() || fallback
   }
   const primary = field('primary', '#1E3A8A')
@@ -275,12 +291,13 @@ function recoverMalformedInfographic(content: string): InfographicDocument {
   const background = field('background', '#F3F4F6')
   const title = field('title', 'Generated Infographic')
   const subtitle = field('subtitle', 'Key insights from the selected sources.')
+  const template = field('template', 'executive_snapshot')
 
   return {
     schema: 'atlas_infographic_v2',
     title,
     subtitle,
-    template: 'executive_snapshot',
+    template,
     color_theme: {
       name: 'Recovered Professional Theme',
       primary,
@@ -409,6 +426,7 @@ export function normalizeSlideDeckContent(content: unknown): SlideDeckDocument |
       diagram: normalizeDiagram(raw?.diagram),
       image_prompt: raw?.image_prompt ? String(raw.image_prompt) : '',
       image_search_query: raw?.image_search_query ? String(raw.image_search_query) : '',
+      image_url: raw?.image_url || raw?.imageUrl ? String(raw.image_url || raw.imageUrl) : '',
       image_alt: raw?.image_alt ? String(raw.image_alt) : '',
     }
   })
@@ -545,7 +563,7 @@ export function normalizeInfographicContent(content: unknown): InfographicDocume
         fontStyle: raw?.fontStyle === 'bold' ? 'bold' : 'normal',
         fill: raw?.fill ? String(raw.fill) : (type === 'chart' ? '#1d4ed8' : '#0f172a'),
         align: ['left', 'center', 'right'].includes(String(raw?.align)) ? raw.align : 'left',
-        imageUrl: raw?.imageUrl ? String(raw.imageUrl) : '',
+        imageUrl: raw?.imageUrl || raw?.image_url ? String(raw.imageUrl || raw.image_url) : '',
         chart_type: raw?.chart_type ? String(raw.chart_type) : '',
         chart_data: chartData?.labels.length && chartData.values.length ? chartData : undefined,
         steps: normalizeStringArray(raw?.steps),
@@ -569,7 +587,8 @@ export function normalizeInfographicContent(content: unknown): InfographicDocume
   }
 
   if (typeof parsed !== 'string') return null
-  if (parsed.includes('atlas_infographic_v2') || parsed.trim().startsWith('```')) {
+  const visualText = normalizeMalformedVisualText(parsed)
+  if (visualText.includes('atlas_infographic_v2') || visualText.includes('atlas_infographic_v1') || parsed.trim().startsWith('```')) {
     return recoverMalformedInfographic(parsed)
   }
   const data = parseInfographicSections(parsed)
@@ -776,46 +795,70 @@ export function renderInfographicHtml(doc: InfographicDocument): string {
   const primary = safeInfographicColor(theme.primary, '#0f172a')
   const accent = safeInfographicColor(theme.accent, '#2563eb')
   const background = safeInfographicColor(doc.background || theme.background, '#f8fafc')
-  const visualElements = sorted.filter((el) => ['chart', 'icon_card', 'process_flow', 'timeline', 'mind_map', 'hierarchy'].includes(el.type))
+  const visualElements = sorted.filter((el) => ['chart', 'icon_card', 'image', 'process_flow', 'timeline', 'mind_map', 'hierarchy'].includes(el.type))
 
   return DOMPurify.sanitize(`
-    <section class="rounded-xl border border-outline-variant p-5 shadow-sm" style="background:${background}">
-      <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 class="text-2xl font-bold text-on-surface">${escapeHtml(doc.title)}</h2>
-          <p class="text-sm text-on-surface-variant mt-1">${escapeHtml(doc.subtitle)}</p>
+    <section class="overflow-hidden rounded-2xl border border-outline-variant shadow-sm" style="background:${background}">
+      <div class="h-2" style="background:linear-gradient(90deg, ${primary}, ${accent})"></div>
+      <div class="p-6">
+      <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div class="max-w-2xl">
+          <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-outline">Infographic Studio</p>
+          <h2 class="mt-2 text-3xl font-black leading-tight text-on-surface">${escapeHtml(doc.title)}</h2>
+          <p class="text-sm leading-relaxed text-on-surface-variant mt-2">${escapeHtml(doc.subtitle)}</p>
         </div>
         <div class="flex flex-wrap gap-2 text-[11px]">
-          ${doc.template ? `<span class="rounded-full bg-white px-2.5 py-1 font-semibold text-on-surface-variant">Template: ${escapeHtml(doc.template)}</span>` : ''}
-          ${theme.name ? `<span class="rounded-full bg-white px-2.5 py-1 font-semibold text-on-surface-variant">Theme: ${escapeHtml(theme.name)}</span>` : ''}
+          ${doc.template ? `<span class="rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">Template: ${escapeHtml(doc.template)}</span>` : ''}
+          ${theme.name ? `<span class="rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">Theme: ${escapeHtml(theme.name)}</span>` : ''}
+          <span class="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">
+            <span class="h-2.5 w-2.5 rounded-full" style="background:${primary}"></span>
+            <span class="h-2.5 w-2.5 rounded-full" style="background:${accent}"></span>
+            Palette
+          </span>
         </div>
       </div>
       <div class="grid md:grid-cols-2 gap-3 mt-4">
-        ${byType('stat').map((el) => `<div class="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900">${escapeHtml(el.text || '')}</div>`).join('')}
+        ${byType('stat').map((el) => `<div class="rounded-xl border border-white/70 bg-white/85 p-4 text-sm font-bold shadow-sm" style="color:${primary}">${escapeHtml(el.text || '')}</div>`).join('')}
         ${visualElements.map((el) => {
           if (el.type === 'chart') return renderInfographicChart(el, accent)
           if (el.type === 'process_flow') return renderInfographicProcess(el, primary)
           if (el.type === 'timeline') return renderInfographicTimeline(el, accent)
           if (el.type === 'mind_map') return renderInfographicNodeMap(el, primary, 'mind')
           if (el.type === 'hierarchy') return renderInfographicNodeMap(el, primary, 'hierarchy')
+          if (el.type === 'image' && el.imageUrl) return `
+            <figure class="overflow-hidden rounded-xl border border-outline-variant bg-white shadow-sm">
+              <img src="${escapeHtml(el.imageUrl)}" alt="${escapeHtml(el.title || el.text || 'Infographic visual')}" class="h-52 w-full object-cover" loading="eager" referrerpolicy="no-referrer" />
+              ${(el.title || el.text || el.source) ? `
+                <figcaption class="px-3 py-2 text-xs text-on-surface-variant">
+                  ${el.title ? `<p class="font-bold text-on-surface">${escapeHtml(el.title)}</p>` : ''}
+                  ${el.text ? `<p class="mt-1">${escapeHtml(el.text)}</p>` : ''}
+                  ${el.source ? `<p class="mt-1 font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+                </figcaption>
+              ` : ''}
+            </figure>
+          `
           return `
-            <div class="rounded-lg border border-outline-variant bg-white p-3">
+            <div class="rounded-xl border border-outline-variant bg-white/90 p-4 shadow-sm">
               <div class="mb-2 flex items-center gap-2">
-                ${el.icon ? `<span class="text-xl">${escapeHtml(el.icon)}</span>` : ''}
+                ${el.icon ? `<span class="flex h-9 w-9 items-center justify-center rounded-lg text-xl" style="background:${accent}18;color:${primary}">${escapeHtml(el.icon)}</span>` : ''}
                 <h3 class="text-sm font-bold text-on-surface">${escapeHtml(el.title || 'Key concept')}</h3>
               </div>
-              <p class="text-xs leading-relaxed text-on-surface-variant">${escapeHtml(el.text || '')}</p>
+              <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(el.text || '')}</p>
               ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
             </div>
           `
         }).join('')}
       </div>
       <div class="grid md:grid-cols-2 gap-3 mt-4">
-        ${byType('section').map((el) => `<div class="rounded-lg bg-surface-container-low p-3 text-sm text-on-surface">${escapeHtml(el.text || '')}</div>`).join('')}
+        ${byType('section').map((el) => `<div class="rounded-xl border border-white/70 bg-white/75 p-4 text-sm leading-relaxed text-on-surface shadow-sm">${escapeHtml(el.text || '')}</div>`).join('')}
       </div>
-      <div class="space-y-2 mt-4">
-        ${byType('takeaway').map((el) => `<p class="text-sm text-on-surface-variant">- ${escapeHtml(el.text || '')}</p>`).join('')}
-        ${(doc.takeaways || []).map((takeaway) => `<p class="text-sm text-on-surface-variant">- ${escapeHtml(takeaway)}</p>`).join('')}
+      <div class="mt-5 rounded-xl border border-white/70 bg-white/80 p-4 shadow-sm">
+        <p class="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-outline">Key Takeaways</p>
+        <div class="space-y-2">
+        ${byType('takeaway').map((el) => `<p class="flex gap-2 text-sm text-on-surface-variant"><span style="color:${accent}">•</span><span>${escapeHtml(el.text || '')}</span></p>`).join('')}
+        ${(doc.takeaways || []).map((takeaway) => `<p class="flex gap-2 text-sm text-on-surface-variant"><span style="color:${accent}">•</span><span>${escapeHtml(takeaway)}</span></p>`).join('')}
+        </div>
+      </div>
       </div>
     </section>
   `)

@@ -152,12 +152,15 @@ export function renderSlideDeckHtml(slides: any[], doc: any = {}) {
   const background = safeHex(theme.background, '#F8FAFC')
 
   return `
-    <div class="space-y-4">
-      <section class="rounded-xl border border-outline-variant bg-white p-5 shadow-sm">
+    <div class="space-y-5">
+      <section class="overflow-hidden rounded-2xl border border-outline-variant bg-white shadow-sm">
+        <div class="h-2" style="background:linear-gradient(90deg, ${primary}, ${accent})"></div>
+        <div class="p-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p class="text-[11px] font-bold uppercase text-outline">Slide Deck Studio</p>
-            <h2 class="mt-1 text-xl font-bold text-on-surface">${escapeHtml(doc.deck_title || 'Generated Slide Deck')}</h2>
+            <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-outline">Slide Deck Studio</p>
+            <h2 class="mt-2 text-2xl font-black leading-tight text-on-surface">${escapeHtml(doc.deck_title || 'Generated Slide Deck')}</h2>
+            <p class="mt-2 max-w-2xl text-sm leading-relaxed text-on-surface-variant">Professional presentation package with visuals, notes, charts, and structured slide blocks.</p>
           </div>
           <div class="flex flex-wrap gap-2 text-[11px]">
             ${doc.template ? `<span class="rounded-full bg-surface-container-low px-2.5 py-1 font-semibold text-on-surface-variant">Template: ${escapeHtml(doc.template)}</span>` : ''}
@@ -169,26 +172,29 @@ export function renderSlideDeckHtml(slides: any[], doc: any = {}) {
             </span>
           </div>
         </div>
+        </div>
       </section>
-      ${slides.map((slide, index) => `
-        <section class="rounded-xl border border-outline-variant bg-white overflow-hidden shadow-sm" style="background:linear-gradient(135deg, #fff 0%, ${background} 100%)">
-          <div class="flex items-start gap-4 px-5 py-4 border-b border-outline-variant" style="background:${primary}12">
-            <div class="w-11 h-11 rounded-lg text-white flex items-center justify-center font-bold text-sm" style="background:${primary}">${escapeHtml(slide.slide_number || index + 1)}</div>
+      ${slides.map((slide, index) => {
+        const visualUrl = imageUrlForSlide(slide)
+        return `
+        <section class="overflow-hidden rounded-2xl border border-outline-variant bg-white shadow-sm" style="background:linear-gradient(135deg, #fff 0%, ${background} 100%)">
+          <div class="flex items-start gap-4 px-5 py-4 border-b border-outline-variant" style="background:linear-gradient(90deg, ${primary}18, ${accent}10)">
+            <div class="w-12 h-12 rounded-xl text-white flex items-center justify-center font-black text-sm shadow-sm" style="background:linear-gradient(135deg, ${primary}, ${accent})">${escapeHtml(slide.slide_number || index + 1)}</div>
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase">
                 <span style="color:${primary}">${escapeHtml(slide.slide_type || 'slide')}</span>
                 ${slide.layout ? `<span class="rounded-full bg-white/80 px-2 py-0.5 text-outline">${escapeHtml(slide.layout)}</span>` : ''}
                 ${slide.icon ? `<span class="rounded-full bg-white/80 px-2 py-0.5 text-outline">Icon: ${escapeHtml(slide.icon)}</span>` : ''}
               </div>
-              <h3 class="text-lg font-bold text-on-surface mt-1">${escapeHtml(slide.title || `Slide ${index + 1}`)}</h3>
+              <h3 class="text-xl font-black text-on-surface mt-1">${escapeHtml(slide.title || `Slide ${index + 1}`)}</h3>
               ${slide.subtitle ? `<p class="text-sm text-on-surface-variant mt-1">${escapeHtml(slide.subtitle)}</p>` : ''}
             </div>
           </div>
-          <div class="grid gap-5 md:grid-cols-[1fr_1.1fr] p-5">
-            <div>
-              <p class="text-xs font-semibold text-on-surface mb-2">Slide Content</p>
+          <div class="grid gap-5 md:grid-cols-[1.05fr_1fr] p-5">
+            <div class="rounded-xl border border-outline-variant bg-white/80 p-4">
+              <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-outline mb-3">Slide Content</p>
               <ul class="space-y-2">
-                ${(slide.bullets || []).map((bullet: string) => `<li class="flex gap-2 text-sm text-on-surface-variant"><span class="mt-2 w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:${accent}"></span><span>${escapeHtml(bullet)}</span></li>`).join('')}
+                ${(slide.bullets || []).map((bullet: string) => `<li class="flex gap-2 text-sm leading-relaxed text-on-surface-variant"><span class="mt-2 w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:${accent}"></span><span>${escapeHtml(bullet)}</span></li>`).join('')}
               </ul>
               <div class="mt-4 space-y-3">
                 ${renderSlideChart(slide, accent)}
@@ -198,17 +204,18 @@ export function renderSlideDeckHtml(slides: any[], doc: any = {}) {
               </div>
             </div>
             <div class="space-y-3">
-              ${(slide.image_prompt || slide.image_search_query) ? `
-                <figure class="overflow-hidden rounded-lg border border-outline-variant bg-surface-container-low">
-                  <img src="${escapeHtml(imageUrlForSlide(slide))}" alt="${escapeHtml(slide.image_alt || slide.image_prompt || slide.title || 'Slide visual')}" class="h-44 w-full object-cover" loading="lazy" />
+              ${visualUrl ? `
+                <figure class="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low shadow-sm">
+                  <img src="${escapeHtml(visualUrl)}" alt="${escapeHtml(slide.image_alt || slide.image_prompt || slide.title || 'Slide visual')}" class="h-56 w-full object-cover bg-surface-container-low" loading="eager" referrerpolicy="no-referrer" />
                   <figcaption class="space-y-1 px-3 py-2 text-[11px] text-on-surface-variant">
                     ${slide.image_search_query ? `<p><span class="font-bold text-on-surface">Image search:</span> ${escapeHtml(slide.image_search_query)}</p>` : ''}
                     ${slide.image_prompt ? `<p><span class="font-bold text-on-surface">AI image prompt:</span> ${escapeHtml(slide.image_prompt)}</p>` : ''}
+                    ${slide.image_url ? `<p><span class="font-bold text-on-surface">Image:</span> attached visual asset</p>` : ''}
                   </figcaption>
                 </figure>
               ` : ''}
-              <div class="rounded-lg bg-surface-container-low p-4">
-              <p class="text-xs font-semibold text-on-surface mb-2">Speaker Notes</p>
+              <div class="rounded-xl border border-outline-variant bg-white/80 p-4">
+              <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-outline mb-2">Speaker Notes</p>
               <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(slide.speaker_notes || '')}</p>
               ${(slide.icon || slide.chart_type || slide.image_prompt || slide.table || slide.timeline || slide.diagram) ? `
                 <div class="mt-3 flex flex-wrap gap-2 text-[11px]">
@@ -225,7 +232,7 @@ export function renderSlideDeckHtml(slides: any[], doc: any = {}) {
             </div>
           </div>
         </section>
-      `).join('')}
+      `}).join('')}
     </div>
   `
 }

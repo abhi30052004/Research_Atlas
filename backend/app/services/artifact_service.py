@@ -27,6 +27,7 @@ GROQ_MODELS = set() # {"llama-3.3-70b-versatile", "mixtral-8x7b-32768", "llama3-
 JSON_ARTIFACT_TYPES = {
     ArtifactType.DATA_TABLE,
     ArtifactType.SLIDE_DECK,
+    ArtifactType.INFOGRAPHIC_CONTENT,
     ArtifactType.MIND_MAP,
     ArtifactType.FLASHCARDS,
     ArtifactType.QUIZ,
