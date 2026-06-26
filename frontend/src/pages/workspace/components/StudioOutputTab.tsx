@@ -2,6 +2,11 @@ import { Zap, Clock, FileText, Edit3, Trash2, ChevronDown, Copy } from 'lucide-r
 import { Artifact } from '../../../api/workspace'
 import { getTool, getToolIcon } from '../utils'
 
+const isVisualStudioArtifact = (artifact: Artifact) => {
+  const type = getTool(artifact.tool)?.type || artifact.tool
+  return type === 'slide_deck' || type === 'infographic_content'
+}
+
 interface StudioOutputTabProps {
   artifacts: Artifact[]
   expandedArtifact: string | null
@@ -58,6 +63,7 @@ export function StudioOutputTab({
           <div className="space-y-4">
             {artifacts.map((artifact, index) => {
               const isExpanded = expandedArtifact === artifact.id
+              const isVisualStudio = isVisualStudioArtifact(artifact)
               const toolObj = getTool(artifact.tool)
               const categoryLabel = toolObj?.category || 'Knowledge'
               const categoryColors: Record<string, string> = {
@@ -113,13 +119,15 @@ export function StudioOutputTab({
                     </div>
                     <div className="flex items-center gap-1">
                       {/* Edit button */}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); editArtifact(artifact) }}
-                        className="p-2.5 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all opacity-0 group-hover:opacity-100"
-                        title="Edit in Editable tab"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
+                      {isVisualStudio && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); editArtifact(artifact) }}
+                          className="p-2.5 rounded-xl text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-all opacity-0 group-hover:opacity-100"
+                          title="Open Studio Editor"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      )}
                       {/* Delete button */}
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDeleteArtifact(artifact.id) }}
@@ -152,13 +160,15 @@ export function StudioOutputTab({
 
                         {/* Action bar */}
                         <div className="flex items-center gap-2 mt-6 pt-5 border-t border-outline-variant">
-                          <button
-                            onClick={() => editArtifact(artifact)}
-                            className="inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-xs font-semibold transition-all hover:shadow-md active:scale-[0.98]"
-                            style={{ background: `linear-gradient(135deg, ${catColor}, ${catColor}cc)` }}
-                          >
-                            <Edit3 className="w-3.5 h-3.5" /> Edit in Editable
-                          </button>
+                          {isVisualStudio && (
+                            <button
+                              onClick={() => editArtifact(artifact)}
+                              className="inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-xs font-semibold transition-all hover:shadow-md active:scale-[0.98]"
+                              style={{ background: `linear-gradient(135deg, ${catColor}, ${catColor}cc)` }}
+                            >
+                              <Edit3 className="w-3.5 h-3.5" /> Open Studio Editor
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               const tmp = document.createElement('div')

@@ -191,19 +191,56 @@ Rules:
 """,
 
     ArtifactType.SLIDE_DECK: """
-You are a presentation designer at Atlas AI. Using the source chunks provided below, create a complete slide deck outline.
+You are a presentation designer at Atlas AI. Using the source chunks provided below, create a complete Slide Deck Studio package with content, visuals, data, and presenter guidance.
 
-Return ONLY valid JSON — no markdown code fences, no explanation, no preamble:
-[
-  {
-    "slide_number": 1,
-    "slide_type": "title | agenda | section | content | data | quote | summary | q_and_a",
-    "title": "<slide title>",
-    "bullets": ["<point 1>", "<point 2>", "<point 3>"],
-    "speaker_notes": "<2-4 sentences the presenter should say for this slide>",
-    "source_reference": "<filename or null>"
-  }
-]
+Return ONLY valid JSON - no markdown code fences, no explanation, no preamble:
+{
+  "schema": "atlas_slide_deck_v2",
+  "deck_title": "<presentation title>",
+  "template": "executive_briefing | investor_pitch | research_report | strategy_review | training",
+  "color_theme": {
+    "name": "<professional theme name>",
+    "primary": "<hex color>",
+    "accent": "<hex color>",
+    "background": "<hex color>"
+  },
+  "slides": [
+    {
+      "slide_number": 1,
+      "slide_type": "title | agenda | section | content | data | quote | comparison | timeline | diagram | summary | q_and_a",
+      "layout": "title | two_column | visual_left | visual_right | chart_focus | table_focus | timeline | smart_art | closing",
+      "title": "<slide title>",
+      "subtitle": "<optional subtitle>",
+      "bullets": ["<point 1>", "<point 2>", "<point 3>"],
+      "speaker_notes": "<2-4 sentences the presenter should say for this slide>",
+      "icon": "<matching Lucide-style icon name or concise icon concept>",
+      "image_prompt": "<AI image prompt for a relevant professional visual, or empty string>",
+      "image_search_query": "<short search query for a relevant image, or empty string>",
+      "image_alt": "<accessible image description, or empty string>",
+      "chart_type": "bar | line | pie | donut | metric | none",
+      "chart_data": {
+        "title": "<chart title>",
+        "labels": ["<label>"],
+        "values": [0],
+        "unit": "<%, $, count, or empty>",
+        "insight": "<one sentence takeaway>"
+      },
+      "table": {
+        "columns": ["<column>"],
+        "rows": [["<cell>"]]
+      },
+      "timeline": [
+        { "date": "<date or phase>", "label": "<milestone>", "description": "<brief detail>" }
+      ],
+      "diagram": {
+        "type": "process | hierarchy | cycle | matrix | comparison | none",
+        "nodes": ["<node>"],
+        "relationships": ["<relationship label>"]
+      },
+      "source_reference": "<filename or null>"
+    }
+  ]
+}
 
 Follow this slide sequence exactly:
 - Slide 1: Title slide
@@ -220,11 +257,17 @@ Rules:
 - Each bullet must contain exactly one idea. Do not split one sentence across multiple bullets.
 - Use parallel bullet phrasing and avoid full paragraphs, semicolons, and multi-clause bullets.
 - Speaker notes must add context not visible in the bullets.
+- Add a matching icon for every slide except title and Q&A.
+- Add image_prompt and image_search_query where a real visual would improve comprehension. Keep them empty for dense data/table slides.
+- Convert explicit statistics, percentages, dates, counts, or measurable facts into chart_data on data slides. Do not invent statistics.
+- Use table only when the sources contain comparisons, categories, criteria, options, or structured rows.
+- Use timeline only when the sources contain dates, phases, milestones, or chronological process steps.
+- Use diagram for workflows, causal chains, frameworks, taxonomies, or SmartArt-style concepts.
+- Select the deck-level template and color_theme based on the source material and audience.
 - Include source_reference on every evidence-based slide.
 - Derive all content from the provided sources only.
-- Return ONLY the JSON array. No text before or after it.
+- Return ONLY the JSON object. No text before or after it.
 """,
-
     ArtifactType.MIND_MAP: """
 You are a knowledge architect at Atlas AI. Using the source chunks provided below, create a structured mind map.
 
@@ -315,29 +358,97 @@ Rules:
 """,
 
     ArtifactType.INFOGRAPHIC_CONTENT: """
-You are a visual content strategist at Atlas AI. Using the source chunks provided below, produce structured infographic content.
+You are an infographic designer at Atlas AI. Using the source chunks provided below, produce a complete Infographic Studio document with structured visual elements.
 
-Structure your output with these exact sections:
-1. **Headline** (punchy, 6-10 words)
-2. **Sub-headline** (one sentence expanding on the headline)
-3. **Key Statistics** (5-7 data points in this format: "STAT — Context sentence" e.g. "73% — of teams report reduced research time after adopting AI tools")
-4. **Main Sections** (4-5 visual content blocks, each with):
-   - Icon Suggestion (e.g. 🔍 Research, 📊 Data, ⚙️ Process)
-   - Section Title (3-5 words)
-   - Visual Data Point or Key Fact (1 sentence)
-   - Supporting Detail (1-2 sentences)
-   - [Source: <filename>]
-5. **Process Flow** (if a process is described in sources): 4-6 numbered steps as short action phrases
-6. **Key Takeaways** (3 punchy closing statements, one sentence each)
-7. **Call to Action** (one clear next step for the reader)
+Return ONLY valid JSON - no markdown code fences, no explanation, no preamble:
+{
+  "schema": "atlas_infographic_v2",
+  "title": "<punchy infographic headline, 6-10 words>",
+  "subtitle": "<one sentence expanding on the headline>",
+  "template": "data_story | process_map | comparison | timeline | hierarchy | executive_snapshot | educational",
+  "color_theme": {
+    "name": "<professional theme name>",
+    "primary": "<hex color>",
+    "accent": "<hex color>",
+    "background": "<hex color>"
+  },
+  "width": 900,
+  "height": 1000,
+  "background": "<hex color>",
+  "elements": [
+    {
+      "id": "chart_1",
+      "type": "chart",
+      "title": "<chart title>",
+      "text": "<short chart insight>",
+      "chart_type": "bar | line | pie | donut | metric",
+      "chart_data": {
+        "labels": ["<label>"],
+        "values": [0],
+        "unit": "<%, $, count, or empty>"
+      },
+      "icon": "<matching icon concept>",
+      "source": "<filename or null>"
+    },
+    {
+      "id": "flow_1",
+      "type": "process_flow",
+      "title": "<process title>",
+      "steps": ["<step 1>", "<step 2>", "<step 3>"],
+      "source": "<filename or null>"
+    },
+    {
+      "id": "timeline_1",
+      "type": "timeline",
+      "title": "<timeline title>",
+      "timeline": [
+        { "date": "<date or phase>", "label": "<milestone>", "description": "<brief detail>" }
+      ],
+      "source": "<filename or null>"
+    },
+    {
+      "id": "mindmap_1",
+      "type": "mind_map",
+      "title": "<central idea>",
+      "nodes": [
+        { "label": "<branch>", "children": ["<detail>"] }
+      ],
+      "source": "<filename or null>"
+    },
+    {
+      "id": "hierarchy_1",
+      "type": "hierarchy",
+      "title": "<hierarchy title>",
+      "nodes": [
+        { "label": "<parent>", "children": ["<child>"] }
+      ],
+      "source": "<filename or null>"
+    },
+    {
+      "id": "concept_1",
+      "type": "icon_card",
+      "title": "<key concept>",
+      "text": "<short supporting detail>",
+      "icon": "<matching icon concept>",
+      "source": "<filename or null>"
+    }
+  ],
+  "takeaways": ["<closing takeaway>"]
+}
 
 Rules:
-- All statistics and facts must come directly from the provided sources.
-- Write for visual scanning — short phrases, not dense paragraphs.
-- Cite [Source: <filename>] next to any specific stat or claim.
-- Do not fabricate data points not present in the sources.
+- Convert explicit statistics, percentages, counts, dates, and measurable facts into chart elements. Do not invent data.
+- Use icon_card elements for key concepts that are not numerical.
+- Use process_flow when the sources describe a workflow, sequence, method, or lifecycle.
+- Use timeline when the sources include dates, phases, periods, or chronological milestones.
+- Use mind_map when the sources describe related themes, branches, categories, or concepts.
+- Use hierarchy when the sources describe levels, roles, taxonomies, organizational structure, or parent-child relationships.
+- Apply a professional template, color theme, spacing, and visual hierarchy suitable for quick scanning.
+- Keep all text short and visual. Avoid paragraphs.
+- Cite source on any specific stat, event, or claim using the source field.
+- Use only facts and data from the provided sources.
+- Return ONLY the JSON object. No text before or after it.
 """,
-
     ArtifactType.AUDIO_OVERVIEW_SCRIPT: """
 You are a podcast scriptwriter at Atlas AI. Using the source chunks provided below, write a natural, engaging audio overview script designed to be read aloud.
 
@@ -627,3 +738,5 @@ class ArtifactService:
 
 
 artifact_service = ArtifactService()
+
+

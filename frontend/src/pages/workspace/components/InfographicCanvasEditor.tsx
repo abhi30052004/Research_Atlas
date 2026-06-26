@@ -73,7 +73,7 @@ function CanvasElement({ element, onSelect, onDragEnd, onTransformEnd, onRef }: 
   return (
     <Text
       {...common}
-      text={element.text || ''}
+      text={element.text || element.title || ''}
       width={element.width}
       height={element.height}
       fontSize={element.fontSize || 20}

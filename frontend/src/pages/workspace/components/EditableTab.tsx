@@ -52,6 +52,22 @@ export function EditableTab({
   const isInfographicArtifact = Boolean(
     editingArtifact && ((getTool(editingArtifact.tool)?.type || editingArtifact.tool) === 'infographic_content')
   )
+  const isVisualStudioArtifact = isSlideDeckArtifact || isInfographicArtifact
+  const visualEditPrompts = isSlideDeckArtifact
+    ? [
+        'Make the deck more executive and polished',
+        'Add stronger visuals, charts, and speaker notes',
+        'Simplify crowded slides and improve flow',
+        'Change to a modern consulting-style theme',
+      ]
+    : isInfographicArtifact
+      ? [
+          'Make this infographic more visual and scannable',
+          'Convert data points into charts and diagrams',
+          'Improve color theme, spacing, and hierarchy',
+          'Add icons, timeline, and process flow where useful',
+        ]
+      : []
 
   const [slideDeckDoc, setSlideDeckDoc] = useState<SlideDeckDocument | null>(null)
   const [infographicDoc, setInfographicDoc] = useState<InfographicDocument | null>(null)
@@ -98,6 +114,10 @@ export function EditableTab({
       const nextSlides = prev.slides.map((slide, i) => (i === index ? { ...slide, ...updates } : slide))
       return { ...prev, slides: nextSlides }
     })
+  }
+
+  const updateSlideDeckMeta = (updates: Partial<SlideDeckDocument>) => {
+    setSlideDeckDoc((prev) => (prev ? { ...prev, ...updates } : prev))
   }
 
   const saveChanges = () => {
@@ -226,8 +246,8 @@ export function EditableTab({
                 type="text"
                 value={regeneratePrompt}
                 onChange={(e) => setRegeneratePrompt(e.target.value)}
-                placeholder="Describe what to regenerate..."
-                className="w-64 px-3 py-1.5 bg-white border border-outline-variant rounded-lg text-xs focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all placeholder:text-outline"
+                placeholder={isVisualStudioArtifact ? 'Ask Atlas to refine this visual...' : 'Describe what to regenerate...'}
+                className={`${isVisualStudioArtifact ? 'w-80' : 'w-64'} px-3 py-1.5 bg-white border border-outline-variant rounded-lg text-xs focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all placeholder:text-outline`}
               />
               <button
                 onClick={handleEditorRegenerate}
@@ -264,13 +284,83 @@ export function EditableTab({
             <p className="text-xs text-on-surface-variant font-mono mt-1">
               Created {editingArtifact.createdAt.toLocaleString()} • {editingArtifact.sourceCount} sources • Editing
             </p>
-          </div>
+            {isVisualStudioArtifact && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {visualEditPrompts.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => setRegeneratePrompt(prompt)}
+                    className="rounded-full border border-outline-variant bg-white px-3 py-1.5 text-xs font-medium text-on-surface-variant transition-colors hover:border-secondary/40 hover:bg-secondary/5 hover:text-secondary"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}          </div>
 
           {/* ContentEditable area */}
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             <div className="max-w-3xl mx-auto px-12 py-8">
+              {isVisualStudioArtifact && (
+                <div className="mb-5 rounded-xl border border-secondary/20 bg-secondary/5 px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 rounded-lg bg-secondary/10 p-2 text-secondary">
+                      <Sparkles className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-on-surface">
+                        {isSlideDeckArtifact ? 'Slide Deck Studio Editor' : 'Infographic Studio Editor'}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
+                        Edit fields directly, or choose a refinement chip above and regenerate only this visual artifact.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
               {isSlideDeckArtifact && slideDeckDoc ? (
                 <div className="space-y-5">
+                  <section className="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
+                    <div className="mb-3">
+                      <p className="text-xs uppercase font-semibold text-on-surface-variant">Deck Design</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        value={slideDeckDoc.deck_title || ''}
+                        onChange={(e) => updateSlideDeckMeta({ deck_title: e.target.value })}
+                        placeholder="Deck title"
+                        className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                      />
+                      <input
+                        value={slideDeckDoc.template || ''}
+                        onChange={(e) => updateSlideDeckMeta({ template: e.target.value })}
+                        placeholder="Template style"
+                        className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                      />
+                      <input
+                        value={slideDeckDoc.color_theme?.name || ''}
+                        onChange={(e) => updateSlideDeckMeta({
+                          color_theme: { ...(slideDeckDoc.color_theme || {}), name: e.target.value }
+                        })}
+                        placeholder="Theme name"
+                        className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        {(['primary', 'accent', 'background'] as const).map((key) => (
+                          <input
+                            key={key}
+                            value={slideDeckDoc.color_theme?.[key] || ''}
+                            onChange={(e) => updateSlideDeckMeta({
+                              color_theme: { ...(slideDeckDoc.color_theme || {}), [key]: e.target.value }
+                            })}
+                            placeholder={key}
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </section>
                   {slideDeckDoc.slides.map((slide, index) => (
                     <section key={`${slide.slide_number}-${index}`} className="rounded-xl border border-outline-variant bg-white p-4 shadow-sm">
                       <div className="flex items-center justify-between gap-3 mb-3">
@@ -291,6 +381,20 @@ export function EditableTab({
                           placeholder="Subtitle"
                           className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
                         />
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <input
+                            value={slide.slide_type || ''}
+                            onChange={(e) => updateSlide(index, { slide_type: e.target.value })}
+                            placeholder="Slide type"
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                          <input
+                            value={slide.layout || ''}
+                            onChange={(e) => updateSlide(index, { layout: e.target.value })}
+                            placeholder="Layout"
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                        </div>
                         <textarea
                           value={(slide.bullets || []).join('\n')}
                           onChange={(e) => updateSlide(index, {
@@ -322,6 +426,20 @@ export function EditableTab({
                             value={slide.image_prompt || ''}
                             onChange={(e) => updateSlide(index, { image_prompt: e.target.value })}
                             placeholder="Image prompt"
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <input
+                            value={slide.image_search_query || ''}
+                            onChange={(e) => updateSlide(index, { image_search_query: e.target.value })}
+                            placeholder="Image search query"
+                            className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
+                          />
+                          <input
+                            value={slide.image_alt || ''}
+                            onChange={(e) => updateSlide(index, { image_alt: e.target.value })}
+                            placeholder="Image alt text"
                             className="w-full rounded-lg border border-outline-variant px-3 py-2 text-sm focus:outline-none focus:border-secondary"
                           />
                         </div>
@@ -378,3 +496,4 @@ export function EditableTab({
     </div>
   )
 }
+

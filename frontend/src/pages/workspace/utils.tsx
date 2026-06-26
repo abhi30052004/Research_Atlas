@@ -15,6 +15,7 @@ import {
 export interface SlideDeckSlide {
   slide_number: number
   slide_type: string
+  layout?: string
   title: string
   subtitle?: string
   bullets: string[]
@@ -22,20 +23,67 @@ export interface SlideDeckSlide {
   source_reference?: string
   icon?: string
   chart_type?: string
+  chart_data?: {
+    title?: string
+    labels: string[]
+    values: Array<number | string>
+    unit?: string
+    insight?: string
+  }
+  table?: {
+    columns: string[]
+    rows: string[][]
+  }
+  timeline?: Array<{
+    date?: string
+    label: string
+    description?: string
+  }>
+  diagram?: {
+    type?: string
+    nodes: string[]
+    relationships?: string[]
+  }
   image_prompt?: string
+  image_search_query?: string
+  image_alt?: string
 }
 
 export interface SlideDeckDocument {
-  schema: 'atlas_slide_deck_v1'
+  schema: 'atlas_slide_deck_v1' | 'atlas_slide_deck_v2'
+  deck_title?: string
+  template?: string
+  color_theme?: {
+    name?: string
+    primary?: string
+    accent?: string
+    background?: string
+  }
   slides: SlideDeckSlide[]
 }
 
-export type InfographicElementType = 'title' | 'subtitle' | 'stat' | 'section' | 'takeaway' | 'icon' | 'image'
+export type InfographicElementType =
+  | 'title'
+  | 'subtitle'
+  | 'stat'
+  | 'section'
+  | 'takeaway'
+  | 'icon'
+  | 'image'
+  | 'chart'
+  | 'icon_card'
+  | 'process_flow'
+  | 'timeline'
+  | 'mind_map'
+  | 'hierarchy'
 
 export interface InfographicElement {
   id: string
   type: InfographicElementType
+  title?: string
   text?: string
+  icon?: string
+  source?: string
   x: number
   y: number
   width: number
@@ -46,12 +94,36 @@ export interface InfographicElement {
   fill?: string
   align?: 'left' | 'center' | 'right'
   imageUrl?: string
+  chart_type?: 'bar' | 'line' | 'pie' | 'donut' | 'metric' | string
+  chart_data?: {
+    labels: string[]
+    values: Array<number | string>
+    unit?: string
+  }
+  steps?: string[]
+  timeline?: Array<{
+    date?: string
+    label: string
+    description?: string
+  }>
+  nodes?: Array<{
+    label: string
+    children?: string[]
+  }>
 }
 
 export interface InfographicDocument {
-  schema: 'atlas_infographic_v1'
+  schema: 'atlas_infographic_v1' | 'atlas_infographic_v2'
   title: string
   subtitle: string
+  template?: string
+  color_theme?: {
+    name?: string
+    primary?: string
+    accent?: string
+    background?: string
+  }
+  takeaways?: string[]
   width: number
   height: number
   background: string
@@ -188,11 +260,69 @@ export function parseMaybeJson(content: unknown) {
 
 export function normalizeSlideDeckContent(content: unknown): SlideDeckDocument | null {
   const parsed = parseMaybeJson(content)
+  const parsedObject = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as any : null
   const rawSlides = Array.isArray(parsed)
     ? parsed
-    : (parsed && typeof parsed === 'object' && Array.isArray((parsed as any).slides) ? (parsed as any).slides : null)
+    : (parsedObject && Array.isArray(parsedObject.slides) ? parsedObject.slides : null)
 
   if (!rawSlides) return null
+
+  const toStringArray = (value: unknown): string[] =>
+    Array.isArray(value) ? value.map((item) => String(item ?? '').trim()).filter(Boolean) : []
+
+  const normalizeChartData = (value: any) => {
+    if (!value || typeof value !== 'object') return undefined
+    const labels = toStringArray(value.labels)
+    const values = Array.isArray(value.values)
+      ? value.values.map((item: unknown) => {
+          const numeric = Number(item)
+          return Number.isFinite(numeric) ? numeric : String(item ?? '').trim()
+        }).filter((item: unknown) => item !== '')
+      : []
+    if (!labels.length || !values.length) return undefined
+    return {
+      title: value.title ? String(value.title) : '',
+      labels,
+      values,
+      unit: value.unit ? String(value.unit) : '',
+      insight: value.insight ? String(value.insight) : '',
+    }
+  }
+
+  const normalizeTable = (value: any) => {
+    if (!value || typeof value !== 'object') return undefined
+    const columns = toStringArray(value.columns)
+    const rows = Array.isArray(value.rows)
+      ? value.rows
+          .map((row: unknown) => Array.isArray(row) ? row.map((cell) => String(cell ?? '')) : [])
+          .filter((row: string[]) => row.length)
+      : []
+    if (!columns.length || !rows.length) return undefined
+    return { columns, rows }
+  }
+
+  const normalizeTimeline = (value: any) => {
+    if (!Array.isArray(value)) return undefined
+    const timeline = value
+      .map((item) => ({
+        date: item?.date ? String(item.date) : '',
+        label: String(item?.label || '').trim(),
+        description: item?.description ? String(item.description) : '',
+      }))
+      .filter((item) => item.label)
+    return timeline.length ? timeline : undefined
+  }
+
+  const normalizeDiagram = (value: any) => {
+    if (!value || typeof value !== 'object') return undefined
+    const nodes = toStringArray(value.nodes)
+    if (!nodes.length) return undefined
+    return {
+      type: value.type ? String(value.type) : '',
+      nodes,
+      relationships: toStringArray(value.relationships),
+    }
+  }
 
   const slides: SlideDeckSlide[] = rawSlides.map((raw: any, index: number) => {
     const bullets = Array.isArray(raw?.bullets)
@@ -201,6 +331,7 @@ export function normalizeSlideDeckContent(content: unknown): SlideDeckDocument |
     return {
       slide_number: Number(raw?.slide_number) || index + 1,
       slide_type: String(raw?.slide_type || 'content'),
+      layout: raw?.layout ? String(raw.layout) : '',
       title: String(raw?.title || `Slide ${index + 1}`),
       subtitle: raw?.subtitle ? String(raw.subtitle) : '',
       bullets,
@@ -208,18 +339,36 @@ export function normalizeSlideDeckContent(content: unknown): SlideDeckDocument |
       source_reference: raw?.source_reference ? String(raw.source_reference) : '',
       icon: raw?.icon ? String(raw.icon) : '',
       chart_type: raw?.chart_type ? String(raw.chart_type) : '',
+      chart_data: normalizeChartData(raw?.chart_data),
+      table: normalizeTable(raw?.table),
+      timeline: normalizeTimeline(raw?.timeline),
+      diagram: normalizeDiagram(raw?.diagram),
       image_prompt: raw?.image_prompt ? String(raw.image_prompt) : '',
+      image_search_query: raw?.image_search_query ? String(raw.image_search_query) : '',
+      image_alt: raw?.image_alt ? String(raw.image_alt) : '',
     }
   })
 
+  const colorTheme = parsedObject?.color_theme && typeof parsedObject.color_theme === 'object'
+    ? {
+        name: parsedObject.color_theme.name ? String(parsedObject.color_theme.name) : '',
+        primary: parsedObject.color_theme.primary ? String(parsedObject.color_theme.primary) : '',
+        accent: parsedObject.color_theme.accent ? String(parsedObject.color_theme.accent) : '',
+        background: parsedObject.color_theme.background ? String(parsedObject.color_theme.background) : '',
+      }
+    : undefined
+
   return {
-    schema: 'atlas_slide_deck_v1',
+    schema: parsedObject?.schema === 'atlas_slide_deck_v2' ? 'atlas_slide_deck_v2' : 'atlas_slide_deck_v1',
+    deck_title: parsedObject?.deck_title ? String(parsedObject.deck_title) : '',
+    template: parsedObject?.template ? String(parsedObject.template) : '',
+    color_theme: colorTheme,
     slides,
   }
 }
 
 export function renderSlideDeckDocument(doc: SlideDeckDocument): string {
-  return DOMPurify.sanitize(renderSlideDeckHtml(doc.slides))
+  return DOMPurify.sanitize(renderSlideDeckHtml(doc.slides, doc))
 }
 
 function parseInfographicSections(input: string): { title: string; subtitle: string; stats: string[]; sections: string[]; takeaways: string[] } {
@@ -265,8 +414,94 @@ function parseInfographicSections(input: string): { title: string; subtitle: str
 
 export function normalizeInfographicContent(content: unknown): InfographicDocument | null {
   const parsed = parseMaybeJson(content)
-  if (parsed && typeof parsed === 'object' && (parsed as any).schema === 'atlas_infographic_v1' && Array.isArray((parsed as any).elements)) {
-    return parsed as InfographicDocument
+  if (
+    parsed &&
+    typeof parsed === 'object' &&
+    ['atlas_infographic_v1', 'atlas_infographic_v2'].includes(String((parsed as any).schema || '')) &&
+    Array.isArray((parsed as any).elements)
+  ) {
+    const rawDoc = parsed as any
+    const palette = rawDoc.color_theme && typeof rawDoc.color_theme === 'object'
+      ? {
+          name: rawDoc.color_theme.name ? String(rawDoc.color_theme.name) : '',
+          primary: rawDoc.color_theme.primary ? String(rawDoc.color_theme.primary) : '',
+          accent: rawDoc.color_theme.accent ? String(rawDoc.color_theme.accent) : '',
+          background: rawDoc.color_theme.background ? String(rawDoc.color_theme.background) : '',
+        }
+      : undefined
+    const elements = rawDoc.elements.map((raw: any, index: number) => {
+      const column = index % 2
+      const row = Math.floor(index / 2)
+      const type = String(raw?.type || 'section') as InfographicElementType
+      const defaultWidth = ['process_flow', 'timeline', 'mind_map', 'hierarchy'].includes(type) ? 820 : 390
+      const defaultHeight = ['process_flow', 'timeline', 'mind_map', 'hierarchy'].includes(type) ? 150 : 120
+      const normalizeStringArray = (value: unknown): string[] =>
+        Array.isArray(value) ? value.map((item) => String(item ?? '').trim()).filter(Boolean) : []
+      const normalizeNodes = (value: unknown) =>
+        Array.isArray(value)
+          ? value.map((node: any) => ({
+              label: String(node?.label || node?.name || '').trim(),
+              children: normalizeStringArray(node?.children),
+            })).filter((node) => node.label)
+          : undefined
+      const normalizeTimeline = (value: unknown) =>
+        Array.isArray(value)
+          ? value.map((item: any) => ({
+              date: item?.date ? String(item.date) : '',
+              label: String(item?.label || '').trim(),
+              description: item?.description ? String(item.description) : '',
+            })).filter((item) => item.label)
+          : undefined
+      const chartData = raw?.chart_data && typeof raw.chart_data === 'object'
+        ? {
+            labels: normalizeStringArray(raw.chart_data.labels),
+            values: Array.isArray(raw.chart_data.values)
+              ? raw.chart_data.values.map((value: unknown) => {
+                  const numeric = Number(value)
+                  return Number.isFinite(numeric) ? numeric : String(value ?? '').trim()
+                }).filter((value: unknown) => value !== '')
+              : [],
+            unit: raw.chart_data.unit ? String(raw.chart_data.unit) : '',
+          }
+        : undefined
+
+      return {
+        id: String(raw?.id || `${type}_${index + 1}`),
+        type,
+        title: raw?.title ? String(raw.title) : '',
+        text: raw?.text ? String(raw.text) : '',
+        icon: raw?.icon ? String(raw.icon) : '',
+        source: raw?.source ? String(raw.source) : '',
+        x: Number(raw?.x) || (type === 'title' || type === 'subtitle' || defaultWidth > 500 ? 40 : column === 0 ? 40 : 470),
+        y: Number(raw?.y) || 150 + row * 150,
+        width: Number(raw?.width) || defaultWidth,
+        height: Number(raw?.height) || defaultHeight,
+        rotation: Number(raw?.rotation) || 0,
+        fontSize: Number(raw?.fontSize) || (type === 'title' ? 42 : type === 'subtitle' ? 18 : 16),
+        fontStyle: raw?.fontStyle === 'bold' ? 'bold' : 'normal',
+        fill: raw?.fill ? String(raw.fill) : (type === 'chart' ? '#1d4ed8' : '#0f172a'),
+        align: ['left', 'center', 'right'].includes(String(raw?.align)) ? raw.align : 'left',
+        imageUrl: raw?.imageUrl ? String(raw.imageUrl) : '',
+        chart_type: raw?.chart_type ? String(raw.chart_type) : '',
+        chart_data: chartData?.labels.length && chartData.values.length ? chartData : undefined,
+        steps: normalizeStringArray(raw?.steps),
+        timeline: normalizeTimeline(raw?.timeline),
+        nodes: normalizeNodes(raw?.nodes),
+      } as InfographicElement
+    })
+
+    return {
+      schema: rawDoc.schema === 'atlas_infographic_v2' ? 'atlas_infographic_v2' : 'atlas_infographic_v1',
+      title: String(rawDoc.title || 'Infographic'),
+      subtitle: String(rawDoc.subtitle || 'Key insights at a glance'),
+      template: rawDoc.template ? String(rawDoc.template) : '',
+      color_theme: palette,
+      takeaways: Array.isArray(rawDoc.takeaways) ? rawDoc.takeaways.map((item: unknown) => String(item || '')).filter(Boolean) : [],
+      width: Number(rawDoc.width) || 900,
+      height: Number(rawDoc.height) || 1000,
+      background: String(rawDoc.background || palette?.background || '#f8fafc'),
+      elements,
+    }
   }
 
   if (typeof parsed !== 'string') return null
@@ -362,26 +597,162 @@ export function createEnrichedInfographicDocument(doc: InfographicDocument): Inf
   return { ...doc, elements }
 }
 
+function safeInfographicColor(value: unknown, fallback: string) {
+  const color = String(value || '').trim()
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback
+}
+
+function renderInfographicChart(el: InfographicElement, accent: string) {
+  const labels = el.chart_data?.labels || []
+  const values = (el.chart_data?.values || []).map((value) => Number(value)).filter((value) => Number.isFinite(value))
+  if (!labels.length || !values.length) return ''
+  const max = Math.max(...values, 1)
+  return `
+    <div class="rounded-lg border border-outline-variant bg-white p-3">
+      <div class="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p class="text-[11px] font-bold uppercase text-outline">${escapeHtml(el.chart_type || 'chart')}</p>
+          <h3 class="text-sm font-bold text-on-surface">${escapeHtml(el.title || 'Data insight')}</h3>
+        </div>
+        ${el.icon ? `<span class="text-xl">${escapeHtml(el.icon)}</span>` : ''}
+      </div>
+      <div class="space-y-2">
+        ${values.map((value, index) => {
+          const width = Math.max(8, Math.round((value / max) * 100))
+          return `
+            <div>
+              <div class="mb-1 flex justify-between gap-3 text-[11px]">
+                <span class="text-on-surface-variant">${escapeHtml(labels[index] || `Item ${index + 1}`)}</span>
+                <span class="font-bold text-on-surface">${escapeHtml(value)}${escapeHtml(el.chart_data?.unit || '')}</span>
+              </div>
+              <div class="h-2.5 rounded-full bg-surface-container-high">
+                <div class="h-full rounded-full" style="width:${width}%;background:${accent}"></div>
+              </div>
+            </div>
+          `
+        }).join('')}
+      </div>
+      ${el.text ? `<p class="mt-3 text-xs leading-relaxed text-on-surface-variant">${escapeHtml(el.text)}</p>` : ''}
+      ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+    </div>
+  `
+}
+
+function renderInfographicProcess(el: InfographicElement, primary: string) {
+  const steps = el.steps || []
+  if (!steps.length) return ''
+  return `
+    <div class="rounded-lg border border-outline-variant bg-white p-3 md:col-span-2">
+      <h3 class="mb-3 text-sm font-bold text-on-surface">${escapeHtml(el.title || 'Process flow')}</h3>
+      <div class="grid gap-2" style="grid-template-columns:repeat(${Math.min(Math.max(steps.length, 2), 6)},minmax(0,1fr))">
+        ${steps.map((step, index) => `
+          <div class="rounded-lg bg-surface-container-low p-3 text-center">
+            <div class="mx-auto mb-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white" style="background:${primary}">${index + 1}</div>
+            <p class="text-xs font-semibold text-on-surface">${escapeHtml(step)}</p>
+          </div>
+        `).join('')}
+      </div>
+      ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+    </div>
+  `
+}
+
+function renderInfographicTimeline(el: InfographicElement, accent: string) {
+  const items = el.timeline || []
+  if (!items.length) return ''
+  return `
+    <div class="rounded-lg border border-outline-variant bg-white p-3 md:col-span-2">
+      <h3 class="mb-3 text-sm font-bold text-on-surface">${escapeHtml(el.title || 'Timeline')}</h3>
+      <div class="space-y-3">
+        ${items.map((item) => `
+          <div class="grid grid-cols-[92px_1fr] gap-3">
+            <span class="text-[11px] font-bold" style="color:${accent}">${escapeHtml(item.date || 'Phase')}</span>
+            <div class="border-l pl-3" style="border-color:${accent}">
+              <p class="text-sm font-semibold text-on-surface">${escapeHtml(item.label)}</p>
+              ${item.description ? `<p class="text-xs text-on-surface-variant">${escapeHtml(item.description)}</p>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+    </div>
+  `
+}
+
+function renderInfographicNodeMap(el: InfographicElement, primary: string, mode: 'mind' | 'hierarchy') {
+  const nodes = el.nodes || []
+  if (!nodes.length) return ''
+  return `
+    <div class="rounded-lg border border-outline-variant bg-white p-3 md:col-span-2">
+      <h3 class="mb-3 text-sm font-bold text-on-surface">${escapeHtml(el.title || (mode === 'mind' ? 'Mind map' : 'Hierarchy'))}</h3>
+      <div class="grid gap-3 md:grid-cols-${mode === 'mind' ? '3' : '2'}">
+        ${nodes.map((node) => `
+          <div class="rounded-lg bg-surface-container-low p-3">
+            <p class="text-sm font-bold" style="color:${primary}">${escapeHtml(node.label)}</p>
+            ${(node.children || []).length ? `
+              <ul class="mt-2 space-y-1">
+                ${(node.children || []).map((child) => `<li class="text-xs text-on-surface-variant">- ${escapeHtml(child)}</li>`).join('')}
+              </ul>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>
+      ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+    </div>
+  `
+}
+
 export function renderInfographicHtml(doc: InfographicDocument): string {
   const sorted = [...doc.elements].sort((a, b) => a.y - b.y)
   const byType = (type: InfographicElementType) => sorted.filter((el) => el.type === type)
+  const theme = doc.color_theme || {}
+  const primary = safeInfographicColor(theme.primary, '#0f172a')
+  const accent = safeInfographicColor(theme.accent, '#2563eb')
+  const background = safeInfographicColor(doc.background || theme.background, '#f8fafc')
+  const visualElements = sorted.filter((el) => ['chart', 'icon_card', 'process_flow', 'timeline', 'mind_map', 'hierarchy'].includes(el.type))
+
   return DOMPurify.sanitize(`
-    <section class="rounded-xl border border-outline-variant bg-white p-5 shadow-sm">
-      <h2 class="text-2xl font-bold text-on-surface">${escapeHtml(doc.title)}</h2>
-      <p class="text-sm text-on-surface-variant mt-1">${escapeHtml(doc.subtitle)}</p>
+    <section class="rounded-xl border border-outline-variant p-5 shadow-sm" style="background:${background}">
+      <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-2xl font-bold text-on-surface">${escapeHtml(doc.title)}</h2>
+          <p class="text-sm text-on-surface-variant mt-1">${escapeHtml(doc.subtitle)}</p>
+        </div>
+        <div class="flex flex-wrap gap-2 text-[11px]">
+          ${doc.template ? `<span class="rounded-full bg-white px-2.5 py-1 font-semibold text-on-surface-variant">Template: ${escapeHtml(doc.template)}</span>` : ''}
+          ${theme.name ? `<span class="rounded-full bg-white px-2.5 py-1 font-semibold text-on-surface-variant">Theme: ${escapeHtml(theme.name)}</span>` : ''}
+        </div>
+      </div>
       <div class="grid md:grid-cols-2 gap-3 mt-4">
         ${byType('stat').map((el) => `<div class="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900">${escapeHtml(el.text || '')}</div>`).join('')}
+        ${visualElements.map((el) => {
+          if (el.type === 'chart') return renderInfographicChart(el, accent)
+          if (el.type === 'process_flow') return renderInfographicProcess(el, primary)
+          if (el.type === 'timeline') return renderInfographicTimeline(el, accent)
+          if (el.type === 'mind_map') return renderInfographicNodeMap(el, primary, 'mind')
+          if (el.type === 'hierarchy') return renderInfographicNodeMap(el, primary, 'hierarchy')
+          return `
+            <div class="rounded-lg border border-outline-variant bg-white p-3">
+              <div class="mb-2 flex items-center gap-2">
+                ${el.icon ? `<span class="text-xl">${escapeHtml(el.icon)}</span>` : ''}
+                <h3 class="text-sm font-bold text-on-surface">${escapeHtml(el.title || 'Key concept')}</h3>
+              </div>
+              <p class="text-xs leading-relaxed text-on-surface-variant">${escapeHtml(el.text || '')}</p>
+              ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+            </div>
+          `
+        }).join('')}
       </div>
       <div class="grid md:grid-cols-2 gap-3 mt-4">
         ${byType('section').map((el) => `<div class="rounded-lg bg-surface-container-low p-3 text-sm text-on-surface">${escapeHtml(el.text || '')}</div>`).join('')}
       </div>
       <div class="space-y-2 mt-4">
-        ${byType('takeaway').map((el) => `<p class="text-sm text-on-surface-variant">• ${escapeHtml(el.text || '')}</p>`).join('')}
+        ${byType('takeaway').map((el) => `<p class="text-sm text-on-surface-variant">- ${escapeHtml(el.text || '')}</p>`).join('')}
+        ${(doc.takeaways || []).map((takeaway) => `<p class="text-sm text-on-surface-variant">- ${escapeHtml(takeaway)}</p>`).join('')}
       </div>
     </section>
   `)
 }
-
 export function normalizeArtifactContent(tool: string, content: unknown) {
   const parsed = parseMaybeJson(content)
   const toolType = getTool(tool)?.type || tool
@@ -424,3 +795,4 @@ export function normalizeArtifactContent(tool: string, content: unknown) {
   }
   return contentStr
 }
+
