@@ -13,6 +13,23 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const getAuthErrorMessage = (err: any, fallback: string) => {
+    if (err?.code === 'ERR_NETWORK') {
+      return 'Unable to reach the server. Please check API URL/CORS configuration and try again.'
+    }
+
+    const detail = err?.response?.data?.detail
+    if (Array.isArray(detail) && detail.length) {
+      return detail.map((d: any) => d?.msg || String(d)).join(', ')
+    }
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail
+    }
+    if (typeof err?.message === 'string' && err.message.trim()) {
+      return err.message
+    }
+    return fallback
+  }
 
   const validate = () => {
     const e: Record<string, string> = {}
@@ -42,7 +59,7 @@ export default function RegisterPage() {
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
-      setErrors({ global: err.response?.data?.detail || 'Failed to register.' })
+      setErrors({ global: getAuthErrorMessage(err, 'Failed to register.') })
     }
   }
 
@@ -57,7 +74,7 @@ export default function RegisterPage() {
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
-      setErrors({ global: err.response?.data?.detail || err.message || 'Failed to sign in with Google.' })
+      setErrors({ global: getAuthErrorMessage(err, 'Failed to sign in with Google.') })
     }
   }
 

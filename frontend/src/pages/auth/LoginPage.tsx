@@ -20,6 +20,23 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
   const [error, setError] = useState('')
   const isSubmittingRef = useRef(false)
+  const getAuthErrorMessage = (err: any, fallback: string) => {
+    if (err?.code === 'ERR_NETWORK') {
+      return 'Unable to reach the server. Please check API URL/CORS configuration and try again.'
+    }
+
+    const detail = err?.response?.data?.detail
+    if (Array.isArray(detail) && detail.length) {
+      return detail.map((d: any) => d?.msg || String(d)).join(', ')
+    }
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail
+    }
+    if (typeof err?.message === 'string' && err.message.trim()) {
+      return err.message
+    }
+    return fallback
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -35,7 +52,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
-      setError(err.response?.data?.detail || 'Invalid email or password.')
+      setError(getAuthErrorMessage(err, 'Invalid email or password.'))
     } finally {
       isSubmittingRef.current = false
     }
@@ -54,7 +71,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
       setStatus('idle')
-      setError(err.response?.data?.detail || err.message || 'Failed to sign in with Google.')
+      setError(getAuthErrorMessage(err, 'Failed to sign in with Google.'))
     } finally {
       isSubmittingRef.current = false
     }

@@ -10,7 +10,16 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: 5173,
     strictPort: true,
+    headers: {
+      // Required for OAuth popup flows (Google/Firebase) so popup can close safely.
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
   },
 })
