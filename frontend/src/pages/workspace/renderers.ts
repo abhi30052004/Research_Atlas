@@ -5,37 +5,50 @@ function safeHex(value: unknown, fallback: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback
 }
 
-function imageUrlForSlide(slide: any) {
+function actualImageUrlForSlide(slide: any) {
   if (slide.image_url) return String(slide.image_url)
-  const query = String(slide.image_search_query || slide.image_prompt || slide.title || '').trim()
-  if (!query) return ''
-  const label = escapeHtml(query.slice(0, 80))
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#0f172a"/>
-          <stop offset="52%" stop-color="#1d4ed8"/>
-          <stop offset="100%" stop-color="#14b8a6"/>
-        </linearGradient>
-        <pattern id="p" width="42" height="42" patternUnits="userSpaceOnUse">
-          <path d="M42 0H0v42" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1"/>
-        </pattern>
-      </defs>
-      <rect width="1200" height="675" fill="url(#g)"/>
-      <rect width="1200" height="675" fill="url(#p)"/>
-      <circle cx="980" cy="130" r="170" fill="rgba(255,255,255,.14)"/>
-      <circle cx="105" cy="560" r="210" fill="rgba(255,255,255,.10)"/>
-      <text x="80" y="110" fill="rgba(255,255,255,.72)" font-family="Arial, sans-serif" font-size="30" font-weight="700">AI Visual Direction</text>
-      <foreignObject x="80" y="170" width="920" height="260">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Arial,sans-serif;color:white;font-size:54px;font-weight:800;line-height:1.12">
-          ${label}
+  if (slide.imageUrl) return String(slide.imageUrl)
+  return ''
+}
+
+function slideVisualLabel(slide: any) {
+  return String(slide.image_search_query || slide.image_prompt || slide.title || 'Slide visual direction').trim()
+}
+
+function renderSlideVisual(slide: any, primary: string, accent: string) {
+  const imageUrl = actualImageUrlForSlide(slide)
+  const label = slideVisualLabel(slide)
+  if (imageUrl) {
+    return `
+      <figure class="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low shadow-sm">
+        <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(slide.image_alt || label || 'Slide visual')}" class="h-56 w-full object-cover bg-surface-container-low" loading="eager" referrerpolicy="no-referrer" />
+        <figcaption class="space-y-1 px-3 py-2 text-[11px] text-on-surface-variant">
+          ${slide.image_search_query ? `<p><span class="font-bold text-on-surface">Image search:</span> ${escapeHtml(slide.image_search_query)}</p>` : ''}
+          ${slide.image_prompt ? `<p><span class="font-bold text-on-surface">AI image prompt:</span> ${escapeHtml(slide.image_prompt)}</p>` : ''}
+          <p><span class="font-bold text-on-surface">Image:</span> attached visual asset</p>
+        </figcaption>
+      </figure>
+    `
+  }
+
+  return `
+    <figure class="relative overflow-hidden rounded-xl border border-outline-variant shadow-sm">
+      <div class="h-56 p-5 text-white" style="background:radial-gradient(circle at 82% 18%, rgba(255,255,255,.24), transparent 28%), radial-gradient(circle at 12% 92%, rgba(255,255,255,.16), transparent 32%), linear-gradient(135deg, ${primary}, ${accent})">
+        <div class="absolute inset-0 opacity-20" style="background-image:linear-gradient(90deg, rgba(255,255,255,.28) 1px, transparent 1px), linear-gradient(rgba(255,255,255,.28) 1px, transparent 1px); background-size:28px 28px"></div>
+        <div class="relative flex h-full flex-col justify-between">
+          <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-white/75">Visual Direction</p>
+          <div>
+            <p class="max-w-sm text-2xl font-black leading-tight">${escapeHtml(label)}</p>
+            <p class="mt-2 text-xs text-white/75">Click Unsplash Image in the editor to attach a live photo.</p>
+          </div>
         </div>
-      </foreignObject>
-      <text x="80" y="590" fill="rgba(255,255,255,.72)" font-family="Arial, sans-serif" font-size="24">Generated visual placeholder</text>
-    </svg>
+      </div>
+      <figcaption class="space-y-1 bg-white px-3 py-2 text-[11px] text-on-surface-variant">
+        ${slide.image_search_query ? `<p><span class="font-bold text-on-surface">Image search:</span> ${escapeHtml(slide.image_search_query)}</p>` : ''}
+        ${slide.image_prompt ? `<p><span class="font-bold text-on-surface">AI image prompt:</span> ${escapeHtml(slide.image_prompt)}</p>` : ''}
+      </figcaption>
+    </figure>
   `
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
 
 function renderSlideChart(slide: any, accent: string) {
@@ -175,7 +188,6 @@ export function renderSlideDeckHtml(slides: any[], doc: any = {}) {
         </div>
       </section>
       ${slides.map((slide, index) => {
-        const visualUrl = imageUrlForSlide(slide)
         return `
         <section class="overflow-hidden rounded-2xl border border-outline-variant bg-white shadow-sm" style="background:linear-gradient(135deg, #fff 0%, ${background} 100%)">
           <div class="flex items-start gap-4 px-5 py-4 border-b border-outline-variant" style="background:linear-gradient(90deg, ${primary}18, ${accent}10)">
@@ -204,16 +216,7 @@ export function renderSlideDeckHtml(slides: any[], doc: any = {}) {
               </div>
             </div>
             <div class="space-y-3">
-              ${visualUrl ? `
-                <figure class="overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low shadow-sm">
-                  <img src="${escapeHtml(visualUrl)}" alt="${escapeHtml(slide.image_alt || slide.image_prompt || slide.title || 'Slide visual')}" class="h-56 w-full object-cover bg-surface-container-low" loading="eager" referrerpolicy="no-referrer" />
-                  <figcaption class="space-y-1 px-3 py-2 text-[11px] text-on-surface-variant">
-                    ${slide.image_search_query ? `<p><span class="font-bold text-on-surface">Image search:</span> ${escapeHtml(slide.image_search_query)}</p>` : ''}
-                    ${slide.image_prompt ? `<p><span class="font-bold text-on-surface">AI image prompt:</span> ${escapeHtml(slide.image_prompt)}</p>` : ''}
-                    ${slide.image_url ? `<p><span class="font-bold text-on-surface">Image:</span> attached visual asset</p>` : ''}
-                  </figcaption>
-                </figure>
-              ` : ''}
+              ${renderSlideVisual(slide, primary, accent)}
               <div class="rounded-xl border border-outline-variant bg-white/80 p-4">
               <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-outline mb-2">Speaker Notes</p>
               <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(slide.speaker_notes || '')}</p>

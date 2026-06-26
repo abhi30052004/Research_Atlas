@@ -788,6 +788,51 @@ function renderInfographicNodeMap(el: InfographicElement, primary: string, mode:
   `
 }
 
+
+function renderInfographicHeroVisual(doc: InfographicDocument, imageEl: InfographicElement | undefined, primary: string, accent: string) {
+  if (imageEl?.imageUrl) {
+    return `
+      <figure class="overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-lg">
+        <img src="${escapeHtml(imageEl.imageUrl)}" alt="${escapeHtml(imageEl.title || doc.title || 'Infographic visual')}" class="h-[360px] w-full object-cover" loading="eager" referrerpolicy="no-referrer" />
+        ${(imageEl.title || imageEl.text || imageEl.source) ? `
+          <figcaption class="px-4 py-3 text-xs text-on-surface-variant">
+            ${imageEl.title ? `<p class="font-bold text-on-surface">${escapeHtml(imageEl.title)}</p>` : ''}
+            ${imageEl.text ? `<p class="mt-1">${escapeHtml(imageEl.text)}</p>` : ''}
+            ${imageEl.source ? `<p class="mt-1 font-mono text-outline">Source: ${escapeHtml(imageEl.source)}</p>` : ''}
+          </figcaption>
+        ` : ''}
+      </figure>
+    `
+  }
+
+  return `
+    <div class="relative min-h-[360px] overflow-hidden rounded-[28px] border border-white/70 p-6 text-white shadow-lg" style="background:radial-gradient(circle at 22% 20%, rgba(255,255,255,.32), transparent 24%), radial-gradient(circle at 78% 78%, rgba(255,255,255,.20), transparent 28%), linear-gradient(135deg, ${primary}, ${accent})">
+      <div class="absolute -left-12 bottom-8 h-44 w-44 rounded-full bg-white/10"></div>
+      <div class="absolute right-8 top-10 h-28 w-28 rounded-full bg-white/15"></div>
+      <div class="absolute inset-x-10 bottom-14 h-24 rounded-[60%] bg-white/12"></div>
+      <div class="relative flex min-h-[312px] flex-col items-center justify-center text-center">
+        <div class="mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-white/18 text-5xl shadow-inner">*</div>
+        <p class="text-[11px] font-bold uppercase tracking-[0.26em] text-white/75">Central Visual</p>
+        <h3 class="mt-3 max-w-md text-3xl font-black leading-tight">${escapeHtml(doc.title)}</h3>
+        <p class="mt-3 max-w-sm text-sm leading-relaxed text-white/80">Use Unsplash Image in the editor to attach a live photo, or keep this generated visual panel for a clean infographic layout.</p>
+      </div>
+    </div>
+  `
+}
+
+function renderInfographicConceptCard(el: InfographicElement, primary: string, accent: string) {
+  return `
+    <div class="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-sm">
+      <div class="mb-2 flex items-center gap-3">
+        <span class="flex h-10 w-10 items-center justify-center rounded-xl text-xl font-black text-white" style="background:linear-gradient(135deg, ${primary}, ${accent})">${escapeHtml(el.icon || '*')}</span>
+        <h3 class="text-sm font-black uppercase tracking-wide text-on-surface">${escapeHtml(el.title || 'Key concept')}</h3>
+      </div>
+      <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(el.text || '')}</p>
+      ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+    </div>
+  `
+}
+
 export function renderInfographicHtml(doc: InfographicDocument): string {
   const sorted = [...doc.elements].sort((a, b) => a.y - b.y)
   const byType = (type: InfographicElementType) => sorted.filter((el) => el.type === type)
@@ -795,74 +840,80 @@ export function renderInfographicHtml(doc: InfographicDocument): string {
   const primary = safeInfographicColor(theme.primary, '#0f172a')
   const accent = safeInfographicColor(theme.accent, '#2563eb')
   const background = safeInfographicColor(doc.background || theme.background, '#f8fafc')
-  const visualElements = sorted.filter((el) => ['chart', 'icon_card', 'image', 'process_flow', 'timeline', 'mind_map', 'hierarchy'].includes(el.type))
+  const heroImage = sorted.find((el) => el.type === 'image' && el.imageUrl)
+  const stats = byType('stat')
+  const concepts = byType('icon_card')
+  const charts = byType('chart')
+  const fullWidth = sorted.filter((el) => ['process_flow', 'timeline', 'mind_map', 'hierarchy'].includes(el.type))
+  const sections = byType('section')
 
   return DOMPurify.sanitize(`
-    <section class="overflow-hidden rounded-2xl border border-outline-variant shadow-sm" style="background:${background}">
+    <section class="overflow-hidden rounded-[28px] border border-outline-variant shadow-sm" style="background:${background}">
       <div class="h-2" style="background:linear-gradient(90deg, ${primary}, ${accent})"></div>
-      <div class="p-6">
-      <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div class="max-w-2xl">
-          <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-outline">Infographic Studio</p>
-          <h2 class="mt-2 text-3xl font-black leading-tight text-on-surface">${escapeHtml(doc.title)}</h2>
-          <p class="text-sm leading-relaxed text-on-surface-variant mt-2">${escapeHtml(doc.subtitle)}</p>
+      <div class="p-6 md:p-8">
+        <div class="mb-7 flex flex-wrap items-start justify-between gap-4">
+          <div class="max-w-3xl">
+            <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-outline">Infographic Studio</p>
+            <h2 class="mt-2 text-4xl font-black leading-tight text-on-surface">${escapeHtml(doc.title)}</h2>
+            <p class="mt-2 text-sm leading-relaxed text-on-surface-variant">${escapeHtml(doc.subtitle)}</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-[11px]">
+            ${doc.template ? `<span class="rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">Template: ${escapeHtml(doc.template)}</span>` : ''}
+            ${theme.name ? `<span class="rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">Theme: ${escapeHtml(theme.name)}</span>` : ''}
+            <span class="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">
+              <span class="h-2.5 w-2.5 rounded-full" style="background:${primary}"></span>
+              <span class="h-2.5 w-2.5 rounded-full" style="background:${accent}"></span>
+              Palette
+            </span>
+          </div>
         </div>
-        <div class="flex flex-wrap gap-2 text-[11px]">
-          ${doc.template ? `<span class="rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">Template: ${escapeHtml(doc.template)}</span>` : ''}
-          ${theme.name ? `<span class="rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">Theme: ${escapeHtml(theme.name)}</span>` : ''}
-          <span class="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 font-semibold text-on-surface-variant">
-            <span class="h-2.5 w-2.5 rounded-full" style="background:${primary}"></span>
-            <span class="h-2.5 w-2.5 rounded-full" style="background:${accent}"></span>
-            Palette
-          </span>
-        </div>
-      </div>
-      <div class="grid md:grid-cols-2 gap-3 mt-4">
-        ${byType('stat').map((el) => `<div class="rounded-xl border border-white/70 bg-white/85 p-4 text-sm font-bold shadow-sm" style="color:${primary}">${escapeHtml(el.text || '')}</div>`).join('')}
-        ${visualElements.map((el) => {
-          if (el.type === 'chart') return renderInfographicChart(el, accent)
-          if (el.type === 'process_flow') return renderInfographicProcess(el, primary)
-          if (el.type === 'timeline') return renderInfographicTimeline(el, accent)
-          if (el.type === 'mind_map') return renderInfographicNodeMap(el, primary, 'mind')
-          if (el.type === 'hierarchy') return renderInfographicNodeMap(el, primary, 'hierarchy')
-          if (el.type === 'image' && el.imageUrl) return `
-            <figure class="overflow-hidden rounded-xl border border-outline-variant bg-white shadow-sm">
-              <img src="${escapeHtml(el.imageUrl)}" alt="${escapeHtml(el.title || el.text || 'Infographic visual')}" class="h-52 w-full object-cover" loading="eager" referrerpolicy="no-referrer" />
-              ${(el.title || el.text || el.source) ? `
-                <figcaption class="px-3 py-2 text-xs text-on-surface-variant">
-                  ${el.title ? `<p class="font-bold text-on-surface">${escapeHtml(el.title)}</p>` : ''}
-                  ${el.text ? `<p class="mt-1">${escapeHtml(el.text)}</p>` : ''}
-                  ${el.source ? `<p class="mt-1 font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
-                </figcaption>
-              ` : ''}
-            </figure>
-          `
-          return `
-            <div class="rounded-xl border border-outline-variant bg-white/90 p-4 shadow-sm">
-              <div class="mb-2 flex items-center gap-2">
-                ${el.icon ? `<span class="flex h-9 w-9 items-center justify-center rounded-lg text-xl" style="background:${accent}18;color:${primary}">${escapeHtml(el.icon)}</span>` : ''}
-                <h3 class="text-sm font-bold text-on-surface">${escapeHtml(el.title || 'Key concept')}</h3>
-              </div>
-              <p class="text-sm leading-relaxed text-on-surface-variant">${escapeHtml(el.text || '')}</p>
-              ${el.source ? `<p class="mt-2 text-[11px] font-mono text-outline">Source: ${escapeHtml(el.source)}</p>` : ''}
+
+        <div class="grid gap-5 lg:grid-cols-[1fr_1.25fr_1fr]">
+          <div class="space-y-4">
+            <div class="border-b pb-2" style="border-color:${accent}">
+              <h3 class="text-sm font-black uppercase tracking-wide text-on-surface">Core Signals</h3>
             </div>
-          `
-        }).join('')}
-      </div>
-      <div class="grid md:grid-cols-2 gap-3 mt-4">
-        ${byType('section').map((el) => `<div class="rounded-xl border border-white/70 bg-white/75 p-4 text-sm leading-relaxed text-on-surface shadow-sm">${escapeHtml(el.text || '')}</div>`).join('')}
-      </div>
-      <div class="mt-5 rounded-xl border border-white/70 bg-white/80 p-4 shadow-sm">
-        <p class="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-outline">Key Takeaways</p>
-        <div class="space-y-2">
-        ${byType('takeaway').map((el) => `<p class="flex gap-2 text-sm text-on-surface-variant"><span style="color:${accent}">•</span><span>${escapeHtml(el.text || '')}</span></p>`).join('')}
-        ${(doc.takeaways || []).map((takeaway) => `<p class="flex gap-2 text-sm text-on-surface-variant"><span style="color:${accent}">•</span><span>${escapeHtml(takeaway)}</span></p>`).join('')}
+            ${stats.slice(0, 3).map((el) => `<div class="rounded-2xl border border-white/70 bg-white/90 p-4 shadow-sm"><p class="text-xl font-black leading-tight" style="color:${primary}">${escapeHtml(el.title || el.text || 'Key statistic')}</p>${el.title && el.text ? `<p class="mt-2 text-sm leading-relaxed text-on-surface-variant">${escapeHtml(el.text)}</p>` : ''}</div>`).join('')}
+            ${concepts.slice(0, 3).map((el) => renderInfographicConceptCard(el, primary, accent)).join('')}
+          </div>
+
+          <div class="space-y-4">
+            ${renderInfographicHeroVisual(doc, heroImage, primary, accent)}
+            ${sections.slice(0, 2).map((el) => `<div class="rounded-2xl border border-white/70 bg-white/80 p-4 text-sm leading-relaxed text-on-surface shadow-sm">${escapeHtml(el.text || el.title || '')}</div>`).join('')}
+          </div>
+
+          <div class="space-y-4">
+            <div class="border-b pb-2" style="border-color:${primary}">
+              <h3 class="text-sm font-black uppercase tracking-wide text-on-surface">Data & Structure</h3>
+            </div>
+            ${charts.slice(0, 3).map((el) => renderInfographicChart(el, accent)).join('')}
+            ${concepts.slice(3, 6).map((el) => renderInfographicConceptCard(el, primary, accent)).join('')}
+            ${stats.slice(3, 6).map((el) => `<div class="rounded-2xl border border-white/70 bg-white/90 p-4 text-sm font-bold shadow-sm" style="color:${primary}">${escapeHtml(el.text || el.title || '')}</div>`).join('')}
+          </div>
         </div>
-      </div>
+
+        <div class="mt-5 grid gap-4">
+          ${fullWidth.map((el) => {
+            if (el.type === 'process_flow') return renderInfographicProcess(el, primary)
+            if (el.type === 'timeline') return renderInfographicTimeline(el, accent)
+            if (el.type === 'mind_map') return renderInfographicNodeMap(el, primary, 'mind')
+            if (el.type === 'hierarchy') return renderInfographicNodeMap(el, primary, 'hierarchy')
+            return ''
+          }).join('')}
+        </div>
+
+        <div class="mt-5 rounded-2xl border border-white/70 bg-white/85 p-4 shadow-sm">
+          <p class="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-outline">Key Takeaways</p>
+          <div class="space-y-2">
+            ${byType('takeaway').map((el) => `<p class="flex gap-2 text-sm text-on-surface-variant"><span style="color:${accent}">&bull;</span><span>${escapeHtml(el.text || '')}</span></p>`).join('')}
+            ${(doc.takeaways || []).map((takeaway) => `<p class="flex gap-2 text-sm text-on-surface-variant"><span style="color:${accent}">&bull;</span><span>${escapeHtml(takeaway)}</span></p>`).join('')}
+          </div>
+        </div>
       </div>
     </section>
   `)
 }
+
 export function normalizeArtifactContent(tool: string, content: unknown) {
   const parsed = parseMaybeJson(content)
   const toolType = getTool(tool)?.type || tool
