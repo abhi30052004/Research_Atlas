@@ -1,8 +1,9 @@
-import { useRef, useState, FormEvent } from 'react'
+import { useEffect, useRef, useState, FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Mail, KeyRound, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { signInWithGoogle } from '../../lib/firebase'
+import { warmAuthApi } from '../../lib/authWarmup'
 
 type LoginPageProps = {
   transparent?: boolean
@@ -20,6 +21,11 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
   const [error, setError] = useState('')
   const isSubmittingRef = useRef(false)
+
+  useEffect(() => {
+    warmAuthApi()
+  }, [])
+
   const getAuthErrorMessage = (err: any, fallback: string) => {
     if (err?.code === 'ERR_NETWORK') {
       return 'Unable to reach the server. Please check API URL/CORS configuration and try again.'
@@ -45,6 +51,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
     if (!email || !password) { setError('Please fill in all fields.'); return }
     isSubmittingRef.current = true
     setStatus('loading')
+    warmAuthApi()
     
     try {
       await loginApi({ email, password })
@@ -63,6 +70,7 @@ export default function LoginPage({ transparent = true, backgroundVideo = true, 
     setError('')
     isSubmittingRef.current = true
     setStatus('loading')
+    warmAuthApi()
 
     try {
       const user = await signInWithGoogle()

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Mail, KeyRound, User, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { signInWithGoogle } from '../../lib/firebase'
+import { warmAuthApi } from '../../lib/authWarmup'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
@@ -13,6 +14,11 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    warmAuthApi()
+  }, [])
+
   const getAuthErrorMessage = (err: any, fallback: string) => {
     if (err?.code === 'ERR_NETWORK') {
       return 'Unable to reach the server. Please check API URL/CORS configuration and try again.'
@@ -47,6 +53,7 @@ export default function RegisterPage() {
     if (Object.keys(errs).length) { setErrors(errs); return }
     setErrors({})
     setStatus('loading')
+    warmAuthApi()
     
     try {
       await registerApi({
@@ -66,6 +73,7 @@ export default function RegisterPage() {
   const handleGoogleSignIn = async () => {
     setErrors({})
     setStatus('loading')
+    warmAuthApi()
 
     try {
       const user = await signInWithGoogle()
